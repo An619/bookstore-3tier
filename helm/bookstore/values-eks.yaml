@@ -1,0 +1,14 @@
+backend:
+  replicaCount: 2
+
+frontend:
+  replicaCount: 2
+  service:
+    type: LoadBalancer
+    port: 80
+
+postgres:
+  persistence:
+    enabled: true
+    size: 8Gi
+    storageClass: gp3
