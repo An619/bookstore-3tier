@@ -37,12 +37,18 @@ spec:
           volumeMounts:
             - name: postgres-data
               mountPath: /var/lib/postgresql/data
+            - name: postgres-init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
           readinessProbe:
             exec:
               command: ["sh","-c","pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
             initialDelaySeconds: 10
             periodSeconds: 10
       volumes:
+        - name: postgres-init
+          configMap:
+            name: bookstore-postgres-init
         - name: postgres-data
           {{- if .Values.postgres.persistence.enabled }}
           persistentVolumeClaim:
