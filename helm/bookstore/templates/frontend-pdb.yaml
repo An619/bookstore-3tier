@@ -1,0 +1,14 @@
+{{- if and .Values.frontend.podDisruptionBudget.enabled (or (gt (int .Values.frontend.replicaCount) 1) (and .Values.frontend.autoscaling.enabled (gt (int .Values.frontend.autoscaling.minReplicas) 1))) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "bookstore.fullname" . }}-frontend
+  labels:
+    {{- include "bookstore.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.frontend.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: frontend
+      app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
