@@ -1,0 +1,49 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: bookstore-availability
+  namespace: bookstore
+  labels:
+    # Must match the Prometheus Operator rule selector for your monitoring release.
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: bookstore.availability
+      rules:
+        - alert: BookstoreBackendUnavailable
+          expr: kube_deployment_status_replicas_available{namespace="bookstore", deployment=~".*-backend"} < 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: Bookstore backend has no available replicas
+            description: The backend Deployment has had fewer than one available replica for 5 minutes.
+            runbook_url: https://github.com/An619/bookstore-3tier/blob/main/docs/runbooks/kubernetes-troubleshooting.md
+
+        - alert: BookstoreFrontendUnavailable
+          expr: kube_deployment_status_replicas_available{namespace="bookstore", deployment=~".*-frontend"} < 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: Bookstore frontend has no available replicas
+            description: The frontend Deployment has had fewer than one available replica for 5 minutes.
+            runbook_url: https://github.com/An619/bookstore-3tier/blob/main/docs/runbooks/kubernetes-troubleshooting.md
+
+        - alert: BookstorePodCrashLooping
+          expr: max_over_time(kube_pod_container_status_waiting_reason{namespace="bookstore", reason="CrashLoopBackOff"}[5m]) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: A Bookstore pod is crash-looping
+            description: Inspect pod events and current/previous container logs.
+
+        - alert: BookstorePersistentVolumeClaimPending
+          expr: kube_persistentvolumeclaim_status_phase{namespace="bookstore", phase="Pending"} == 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: A Bookstore PVC is pending
+            description: Check StorageClass, provisioner, capacity and PVC events.
