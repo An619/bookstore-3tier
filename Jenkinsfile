@@ -11,7 +11,12 @@ pipeline {
     parameters {
         booleanParam(name: 'SONARQUBE_ENABLED', defaultValue: false, description: 'Run SonarQube analysis; requires SonarScanner and Jenkins credential sonarqube-token.')
         booleanParam(name: 'TRIVY_ENABLED', defaultValue: false, description: 'Scan built images; requires Trivy installed on the agent.')
-        booleanParam(name: 'PUBLISH_IMAGES', defaultValue: false, description: 'Publish commit-tagged images from main; requires dockerhub-creds.')
+        booleanParam(name: 'PUBLISH_IMAGES', defaultValue: false, description: 'Publish commit-tagged images to Docker Hub from main; requires dockerhub-creds.')
+        booleanParam(name: 'PUBLISH_TO_ECR', defaultValue: false, description: 'Publish commit-tagged images to AWS ECR from main; requires AWS CLI, AWS credentials and existing ECR repositories.')
+        string(name: 'AWS_REGION', defaultValue: 'ap-south-1', description: 'AWS region containing the ECR repositories.')
+        string(name: 'ECR_REGISTRY', defaultValue: '', description: 'ECR registry host, for example account-id.dkr.ecr.ap-south-1.amazonaws.com.')
+        string(name: 'ECR_BACKEND_REPOSITORY', defaultValue: 'bookstore-lab/backend', description: 'Backend ECR repository name created by Terraform.')
+        string(name: 'ECR_FRONTEND_REPOSITORY', defaultValue: 'bookstore-lab/frontend', description: 'Frontend ECR repository name created by Terraform.')
     }
 
     environment {
@@ -124,6 +129,32 @@ pipeline {
                     sh 'docker compose logs --no-color || true'
                     sh 'docker compose down -v --remove-orphans || true'
                 }
+            }
+        }
+
+
+        stage('Publish images to AWS ECR') {
+            when {
+                allOf {
+                    branch 'main'
+                    expression { params.PUBLISH_TO_ECR }
+                }
+            }
+            steps {
+                sh '''
+                    set -eu
+                    test -n "$ECR_REGISTRY"
+                    command -v aws
+                    aws sts get-caller-identity >/dev/null
+                    BACKEND_REMOTE="$ECR_REGISTRY/$ECR_BACKEND_REPOSITORY:$IMAGE_TAG"
+                    FRONTEND_REMOTE="$ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY:$IMAGE_TAG"
+                    aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+                    trap 'docker logout "$ECR_REGISTRY" >/dev/null 2>&1 || true' EXIT
+                    docker tag "$BACKEND_IMAGE:$IMAGE_TAG" "$BACKEND_REMOTE"
+                    docker tag "$FRONTEND_IMAGE:$IMAGE_TAG" "$FRONTEND_REMOTE"
+                    docker push "$BACKEND_REMOTE"
+                    docker push "$FRONTEND_REMOTE"
+                '''
             }
         }
 
