@@ -22,3 +22,13 @@ npm-debug.log*
 .DS_Store
 .idea/
 .vscode/
+
+# Terraform state and local working data
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+terraform.tfvars
+terraform.tfvars.json
