@@ -1,0 +1,58 @@
+nameOverride: ""
+fullnameOverride: ""
+
+imagePullPolicy: IfNotPresent
+
+frontend:
+  replicaCount: 1
+  image:
+    repository: bookstore-frontend
+    tag: local
+  service:
+    type: ClusterIP
+    port: 80
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+backend:
+  replicaCount: 1
+  image:
+    repository: bookstore-backend
+    tag: local
+  service:
+    port: 5000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+database:
+  image: postgres:16-alpine
+  name: bookstore
+  username: bookuser
+  # Replace through a secret-management solution for shared/cloud environments.
+  password: local-only-change-me
+  storageSize: 2Gi
+  storageClassName: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: bookstore.local
+  tls: []
