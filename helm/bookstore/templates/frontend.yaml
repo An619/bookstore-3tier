@@ -22,13 +22,23 @@ spec:
         app.kubernetes.io/component: frontend
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: frontend
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 101
+            runAsGroup: 101
+            capabilities:
+              drop: ["ALL"]
           image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           ports:
             - name: http
-              containerPort: 80
+              containerPort: 8080
           readinessProbe:
             httpGet:
               path: /nginx-health
