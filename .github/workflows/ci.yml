@@ -82,3 +82,27 @@ jobs:
       - name: Stop stack
         if: always()
         run: docker compose down -v --remove-orphans || true
+
+  terraform-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: Check Terraform formatting
+        run: terraform fmt -check -recursive terraform/eks
+
+      - name: Initialize Terraform without a backend
+        working-directory: terraform/eks
+        run: terraform init -backend=false -input=false
+
+      - name: Validate Terraform configuration
+        working-directory: terraform/eks
+        run: terraform validate
