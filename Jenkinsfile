@@ -130,10 +130,18 @@ pipeline {
                       fi
                       sleep 3
                     done
+                    catalog_attempt=0
+                    until curl --fail --silent http://localhost:8081/api/health | grep -q "catalog-service"; do
+                      catalog_attempt=$((catalog_attempt + 1))
+                      if [ "$catalog_attempt" -ge 30 ]; then
+                        docker compose logs catalog
+                        exit 1
+                      fi
+                      sleep 2
+                    done
                     curl --fail --silent http://localhost:5000/api/books | grep -q "DevOps for Beginners"
                     curl --fail --silent http://localhost:8080/ > /dev/null
                     curl --fail --silent http://localhost:8080/api/books | grep -q "Kubernetes Basics"
-                    curl --fail --silent http://localhost:8081/api/health | grep -q "catalog-service"
                     curl --fail --silent http://localhost:8081/api/catalog/books | grep -q "DevOps for Beginners"
                 '''
             }
