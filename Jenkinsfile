@@ -22,6 +22,7 @@ pipeline {
     environment {
         BACKEND_IMAGE = 'bookstore-backend'
         FRONTEND_IMAGE = 'bookstore-frontend'
+        CATALOG_IMAGE = 'bookstore-catalog'
         IMAGE_TAG = ''
     }
 
@@ -32,6 +33,13 @@ pipeline {
                 script {
                     env.IMAGE_TAG = sh(script: 'git rev-parse --short=12 HEAD', returnStdout: true).trim()
                 }
+            }
+        }
+
+        stage('Catalog service validation (Maven)') {
+            steps {
+                sh 'mvn -version'
+                sh 'mvn -B -f services/catalog-service/pom.xml clean verify'
             }
         }
 
@@ -66,7 +74,7 @@ pipeline {
                         set -eu
                         test -n "$SONAR_HOST_URL"
                         command -v sonar-scanner
-                        sonar-scanner                           -Dsonar.host.url="$SONAR_HOST_URL"                           -Dsonar.token="$SONAR_TOKEN"
+                        sonar-scanner -Dsonar.host.url="$SONAR_HOST_URL" -Dsonar.token="$SONAR_TOKEN"
                     '''
                 }
             }
@@ -76,6 +84,7 @@ pipeline {
             steps {
                 sh 'docker build -t $BACKEND_IMAGE:$IMAGE_TAG ./backend'
                 sh 'docker build -t $FRONTEND_IMAGE:$IMAGE_TAG ./frontend'
+                sh 'docker build -t $CATALOG_IMAGE:$IMAGE_TAG ./services/catalog-service'
             }
         }
 
@@ -89,6 +98,7 @@ pipeline {
                     command -v trivy
                     trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$BACKEND_IMAGE:$IMAGE_TAG"
                     trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$FRONTEND_IMAGE:$IMAGE_TAG"
+                    trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$CATALOG_IMAGE:$IMAGE_TAG"
                 '''
             }
         }
@@ -122,6 +132,8 @@ pipeline {
                     curl --fail --silent http://localhost:5000/api/books | grep -q "DevOps for Beginners"
                     curl --fail --silent http://localhost:8080/ > /dev/null
                     curl --fail --silent http://localhost:8080/api/books | grep -q "Kubernetes Basics"
+                    curl --fail --silent http://localhost:8081/api/health | grep -q "catalog-service"
+                    curl --fail --silent http://localhost:8081/api/catalog/books | grep -q "DevOps for Beginners"
                 '''
             }
             post {
@@ -187,6 +199,7 @@ pipeline {
         always {
             sh 'docker image ls "$BACKEND_IMAGE" --format "{{.Repository}}:{{.Tag}}" || true'
             sh 'docker image ls "$FRONTEND_IMAGE" --format "{{.Repository}}:{{.Tag}}" || true'
+            sh 'docker image ls "$CATALOG_IMAGE" --format "{{.Repository}}:{{.Tag}}" || true'
             deleteDir()
         }
         success {
