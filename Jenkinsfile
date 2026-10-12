@@ -8,13 +8,16 @@ pipeline {
         timeout(time: 45, unit: 'MINUTES')
     }
 
+    parameters {
+        booleanParam(name: 'SONARQUBE_ENABLED', defaultValue: false, description: 'Run SonarQube analysis; requires SonarScanner and Jenkins credential sonarqube-token.')
+        booleanParam(name: 'TRIVY_ENABLED', defaultValue: false, description: 'Scan built images; requires Trivy installed on the agent.')
+        booleanParam(name: 'PUBLISH_IMAGES', defaultValue: false, description: 'Publish commit-tagged images from main; requires dockerhub-creds.')
+    }
+
     environment {
         BACKEND_IMAGE = 'bookstore-backend'
         FRONTEND_IMAGE = 'bookstore-frontend'
         IMAGE_TAG = ''
-        SONARQUBE_ENABLED = 'false'
-        TRIVY_ENABLED = 'false'
-        PUBLISH_IMAGES = 'false'
     }
 
     stages {
@@ -50,7 +53,7 @@ pipeline {
 
         stage('SonarQube analysis') {
             when {
-                expression { env.SONARQUBE_ENABLED == 'true' }
+                expression { params.SONARQUBE_ENABLED }
             }
             steps {
                 withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
@@ -73,7 +76,7 @@ pipeline {
 
         stage('Trivy image scan') {
             when {
-                expression { env.TRIVY_ENABLED == 'true' }
+                expression { params.TRIVY_ENABLED }
             }
             steps {
                 sh '''
@@ -128,7 +131,7 @@ pipeline {
             when {
                 allOf {
                     branch 'main'
-                    expression { env.PUBLISH_IMAGES == 'true' }
+                    expression { params.PUBLISH_IMAGES }
                 }
             }
             steps {
