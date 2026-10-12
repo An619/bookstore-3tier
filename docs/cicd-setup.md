@@ -44,3 +44,15 @@ Install Trivy on the Jenkins agent and set `TRIVY_ENABLED=true`. High/Critical u
 Create a Jenkins username/password credential with ID `dockerhub-creds`, where the password is a Docker Hub access token. Set `PUBLISH_IMAGES=true` only after testing. Publishing is limited to the `main` branch and tags images with the Git commit SHA prefix.
 
 Do not put tokens in the Jenkinsfile, repository, shell command arguments or logs. Restrict who can modify the pipeline and who can trigger publishing.
+
+## Optional AWS ECR publishing
+
+The Jenkinsfile also exposes the PUBLISH_TO_ECR build parameter. Use it only on the main branch after Terraform has created both ECR repositories.
+
+1. Attach a narrowly scoped AWS IAM role/identity to the Jenkins agent; avoid long-lived access keys when possible.
+2. Ensure the agent has AWS CLI v2 and Docker installed.
+3. Set AWS_REGION to the Terraform region, ECR_REGISTRY to the account registry hostname, and repository names to the Terraform-created names (default: bookstore-lab/backend and bookstore-lab/frontend).
+4. Confirm the agent identity can authenticate to ECR and push to those two repositories.
+5. Run the main-branch build with PUBLISH_TO_ECR enabled. The images are tagged with the source commit SHA prefix.
+
+The ECR registry/repositories must already exist. This stage publishes artifacts only; it does not deploy to EKS or change Argo CD configuration. Use a reviewed GitOps change to promote the tested image tags.
