@@ -22,8 +22,17 @@ spec:
         app.kubernetes.io/component: backend
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: backend
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop: ["ALL"]
           image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           ports:
@@ -41,16 +50,16 @@ spec:
             - name: DB_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "bookstore.fullname" . }}-database
+                  name: {{ include "bookstore.databaseSecretName" . }}
                   key: username
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "bookstore.fullname" . }}-database
+                  name: {{ include "bookstore.databaseSecretName" . }}
                   key: password
           readinessProbe:
             httpGet:
-              path: /api/health
+              path: /api/ready
               port: http
             initialDelaySeconds: 5
             periodSeconds: 5
