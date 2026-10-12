@@ -12,6 +12,11 @@ backend:
     repository: ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/bookstore-lab/backend
     tag: REPLACE_WITH_COMMIT_SHA
 
+catalog:
+  image:
+    repository: ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/bookstore-lab/catalog
+    tag: REPLACE_WITH_COMMIT_SHA
+
 database:
   # Pre-create this Secret in the bookstore namespace through an approved secret workflow.
   # It must contain username and password keys.

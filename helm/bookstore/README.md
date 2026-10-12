@@ -1,6 +1,6 @@
 # Bookstore Helm chart
 
-This chart is a learning baseline for Kubernetes. It deploys the React/Nginx frontend, Node.js API and a single PostgreSQL StatefulSet with a persistent volume claim.
+This learning chart deploys the React/Nginx frontend, existing Node.js API, Java/Spring Boot catalog microservice and a single PostgreSQL StatefulSet with a persistent volume claim.
 
 ## Validate
 
@@ -9,29 +9,27 @@ helm lint ./helm/bookstore
 helm template bookstore ./helm/bookstore --namespace bookstore
 ```
 
-## Local/disposable cluster
+## Install in a disposable cluster
 
-Build the frontend and backend images and make them available to the selected Kubernetes cluster before installation. A local image on your workstation is not automatically available to a remote cluster.
+Build all three application images and make them available to the selected Kubernetes cluster before installation. Images on your workstation are not automatically available to a remote cluster.
 
 ```bash
 helm upgrade --install bookstore ./helm/bookstore --namespace bookstore --create-namespace
 kubectl get pods,svc,pvc -n bookstore
 kubectl rollout status deployment/bookstore-backend -n bookstore
 kubectl rollout status deployment/bookstore-frontend -n bookstore
+kubectl rollout status deployment/bookstore-catalog -n bookstore
+kubectl port-forward svc/bookstore-catalog 8081:8081 -n bookstore
 ```
 
-The default images use the tag `local` and the default database password is for a disposable lab only. For a remote cluster, push commit-SHA-tagged images to a registry and override image repositories/tags.
+The catalog service is available internally at `bookstore-catalog:8081` when the default release name is used. Its sample data is in-memory and is not yet connected to the legacy API or PostgreSQL. The frontend continues to use the legacy Node API at this migration stage.
 
-## Database secret
+The default image tags and database password are for a disposable lab only. For a remote cluster, push commit-SHA-tagged images and override image repositories/tags using reviewed environment values.
 
-For a learning-only installation, the chart creates a Secret from the local-only value in `values.yaml`. Never use that default in a shared or cloud environment.
+## Database secrets
 
-For a shared environment, create a Kubernetes Secret using your approved secret-management workflow, containing keys `username` and `password`, then configure `database.existingSecret` to its name. Do not commit actual secret values or put real credentials in command history. On AWS, prefer a managed secrets integration and a reviewed access policy.
-
-## Optional autoscaling and disruption budgets
-
-Set `backend.autoscaling.enabled=true` or `frontend.autoscaling.enabled=true` only when Metrics Server is installed and resource requests are set appropriately. PodDisruptionBudgets are opt-in and only render for configurations with more than one desired replica.
+For learning-only installation, the chart creates a Secret from the local-only value in `values.yaml`. Never use that default in a shared or cloud environment. For a shared environment, pre-create a Kubernetes Secret through an approved secret workflow with `username` and `password` keys, then set `database.existingSecret`.
 
 ## Production limitations
 
-The in-cluster PostgreSQL StatefulSet is for learning only. A production design should normally consider managed PostgreSQL, tested backups and restores, encryption, monitoring, upgrade strategy, network restrictions, least-privilege access and a defined recovery objective. The chart has not yet been load-tested or validated on EKS.
+The in-cluster PostgreSQL StatefulSet and in-memory catalog are learning components, not a production data architecture. A production design needs explicit data ownership, migrations, backups/restores, encryption, monitoring, network restrictions, least-privilege access and recovery objectives. This chart has not been load-tested or validated on EKS.

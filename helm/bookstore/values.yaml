@@ -50,6 +50,21 @@ backend:
     enabled: false
     minAvailable: 1
 
+catalog:
+  replicaCount: 1
+  image:
+    repository: bookstore-catalog
+    tag: local
+  service:
+    port: 8081
+  resources:
+    requests:
+      cpu: 100m
+      memory: 192Mi
+    limits:
+      cpu: 500m
+      memory: 384Mi
+
 database:
   image: postgres:16-alpine
   name: bookstore

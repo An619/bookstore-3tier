@@ -112,6 +112,40 @@ resource "aws_ecr_repository" "frontend" {
   tags = local.common_tags
 }
 
+resource "aws_ecr_repository" "catalog" {
+  name                 = "${local.name}/catalog"
+  image_tag_mutability = "IMMUTABLE"
+  force_delete         = false
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "AES256"
+  }
+
+  tags = local.common_tags
+}
+
+resource "aws_ecr_lifecycle_policy" "catalog" {
+  repository = aws_ecr_repository.catalog.name
+
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "Expire untagged images older than 14 days"
+      selection = {
+        tagStatus   = "untagged"
+        countType   = "sinceImagePushed"
+        countUnit   = "days"
+        countNumber = 14
+      }
+      action = { type = "expire" }
+    }]
+  })
+}
+
 resource "aws_ecr_lifecycle_policy" "backend" {
   repository = aws_ecr_repository.backend.name
 

@@ -2,9 +2,9 @@ name: Bookstore CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feature/devops-platform-foundation]
   push:
-    branches: [main]
+    branches: [main, feature/devops-platform-foundation]
   workflow_dispatch:
 
 permissions:
@@ -17,7 +17,7 @@ concurrency:
 jobs:
   validate-and-smoke-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,6 +30,17 @@ jobs:
           cache-dependency-path: |
             backend/package-lock.json
             frontend/package-lock.json
+
+      - name: Set up Java for Maven catalog service
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: services/catalog-service/pom.xml
+
+      - name: Validate Maven catalog service
+        run: mvn -B -f services/catalog-service/pom.xml clean verify
 
       - name: Validate backend
         working-directory: backend
@@ -55,10 +66,10 @@ jobs:
           helm template bookstore ./helm/bookstore --namespace bookstore > /tmp/bookstore-rendered.yaml
           test -s /tmp/bookstore-rendered.yaml
 
-      - name: Build and start three-tier stack
+      - name: Build and start multi-service stack
         run: docker compose up --build -d
 
-      - name: Smoke test API and frontend proxy
+      - name: Smoke test APIs and frontend proxy
         run: |
           set -eu
           for attempt in $(seq 1 30); do
@@ -71,9 +82,20 @@ jobs:
             fi
             sleep 3
           done
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:8081/api/health | grep -q "catalog-service"; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              docker compose logs
+              exit 1
+            fi
+            sleep 3
+          done
           curl --fail --silent http://localhost:5000/api/books | grep -q "DevOps for Beginners"
           curl --fail --silent http://localhost:8080/ > /dev/null
           curl --fail --silent http://localhost:8080/api/books | grep -q "Kubernetes Basics"
+          curl --fail --silent http://localhost:8081/api/catalog/books | grep -q "DevOps for Beginners"
 
       - name: Print diagnostic logs on failure
         if: failure()

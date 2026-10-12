@@ -23,6 +23,11 @@ output "frontend_ecr_repository_url" {
   value       = aws_ecr_repository.frontend.repository_url
 }
 
+output "catalog_ecr_repository_url" {
+  description = "Catalog microservice ECR repository URL."
+  value       = aws_ecr_repository.catalog.repository_url
+}
+
 output "configure_kubectl_command" {
   description = "Command to configure kubectl for this cluster."
   value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks.cluster_name}"
