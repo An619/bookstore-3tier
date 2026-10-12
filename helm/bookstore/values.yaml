@@ -18,6 +18,14 @@ frontend:
     limits:
       cpu: 250m
       memory: 256Mi
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
 
 backend:
   replicaCount: 1
@@ -33,13 +41,22 @@ backend:
     limits:
       cpu: 500m
       memory: 512Mi
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
 
 database:
   image: postgres:16-alpine
   name: bookstore
   username: bookuser
-  # Replace through a secret-management solution for shared/cloud environments.
+  # Local learning default only. For shared environments use existingSecret or a secret manager.
   password: local-only-change-me
+  existingSecret: ""
   storageSize: 2Gi
   storageClassName: ""
   resources:
