@@ -8,10 +8,23 @@ helm lint ./helm/bookstore
 helm template bookstore ./helm/bookstore --namespace bookstore
 ```
 
-Review the rendered manifests before installing. The chart includes a single PostgreSQL StatefulSet with a persistent volume claim, backend/frontend Deployments and Services, database Secret and initialization ConfigMap. It is intended for learning; it is not a substitute for managed PostgreSQL or a reviewed production chart.
+Review rendered manifests before installation. The chart includes frontend/backend Deployments and Services, a PostgreSQL StatefulSet with persistent storage, a database Secret/ConfigMap, optional Ingress, optional HPA and optional PodDisruptionBudgets.
 
-## Install in a disposable Kubernetes cluster
-Build and make the application images available to the cluster first. For a remote cluster, push images to a registry and set the image repositories/tags in a separate values file.
+## Image delivery contract
+CI builds images tagged with the source commit. Publish those images to a registry and set the chart's frontend/backend image repositories and commit-SHA tags for the target environment. A local image named bookstore-frontend:local or bookstore-backend:local is not available to a remote cluster unless you explicitly load it.
+
+For AWS, use the ECR URLs output by Terraform and a reviewed environment values file. The sample chart defaults are for a disposable lab.
+
+## Database credentials
+The default password in values.yaml is a local-only learning value. Never use it in a shared or cloud environment. Create a Kubernetes Secret with keys username and password using your approved secret-management workflow, then set database.existingSecret to that Secret name. Do not commit actual secret values or put real credentials in command history.
+
+## Argo CD
+The starter Application is argocd/bookstore-application.yaml. It tracks main, uses the chart at helm/bookstore, and intentionally uses **manual sync**. This avoids accidentally deploying local-only image tags and credentials when Argo CD is first connected.
+
+After you configure the image tags, database Secret, ingress and target cluster, review the rendered diff and then sync from Argo CD. Only enable automated sync/self-heal/prune after you understand the impact and have a reviewed rollback process.
+
+## Deploy in a disposable cluster
+Build and make images available to the cluster first, then:
 
 ```bash
 helm upgrade --install bookstore ./helm/bookstore --namespace bookstore --create-namespace
@@ -20,12 +33,7 @@ kubectl rollout status deployment/bookstore-backend -n bookstore
 kubectl rollout status deployment/bookstore-frontend -n bookstore
 ```
 
-If the Helm release has a different name, resource names may differ. Use `kubectl get all,pvc -n bookstore` to inspect actual names.
+Resource names depend on the Helm release name. Inspect actual resources with kubectl get all,pvc -n bookstore.
 
-## Argo CD
-The starter Application is in `argocd/bookstore-application.yaml`. Apply it only after Argo CD is installed and configured to access this repository. The manifest currently tracks `main`; do not expect the feature branch chart to deploy until the change is merged or the targetRevision is deliberately changed.
-
-Automated prune/self-heal is powerful: review the Git diff and rendered manifests before merging. Never store real passwords in Git or plain Helm values. For shared/cloud environments, integrate an external secret manager and supply secret references rather than committing secret values.
-
-## Image delivery contract
-CI should build images with a commit-SHA tag and publish them to a registry. A reviewed GitOps change then updates the chart image tags. Argo CD reconciles the cluster from Git; Jenkins should not directly mutate the cluster in this design.
+## Important limitation
+The PostgreSQL StatefulSet is a learning component, not a managed/production database. A production design needs tested backup/restore, upgrade, encryption, monitoring, access controls and a defined recovery objective.
