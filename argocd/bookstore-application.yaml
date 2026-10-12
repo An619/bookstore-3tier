@@ -15,9 +15,7 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: bookstore
+  # Deliberately manual until image tags, secrets, ingress and cluster access are reviewed.
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
