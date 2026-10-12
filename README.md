@@ -1,50 +1,53 @@
-# Bookstore 3-Tier DevOps Platform
+# Bookstore DevOps and Microservices Lab
 
-A hands-on DevOps portfolio lab around a three-tier application. The repository is designed to be practiced in Killercoda first and then moved to a local Kubernetes cluster or AWS EKS.
+A hands-on portfolio project to practice a staged migration from a three-tier bookstore app toward independently deployable services. Start locally, practice Kubernetes on Killercoda, then consider a carefully budgeted AWS EKS lab.
 
 ## Application architecture
 
-- **Presentation tier:** React + Vite served by unprivileged Nginx.
-- **Application tier:** Node.js + Express REST API.
-- **Data tier:** PostgreSQL.
-- **Local runtime:** Docker Compose with health-gated dependencies and a persistent development database volume.
+- **Frontend:** React + Vite served by unprivileged Nginx.
+- **Existing API:** Node.js + Express, currently still responsible for the legacy API and PostgreSQL integration.
+- **Catalog microservice:** Java 21 + Spring Boot, built/tested with Maven, with its own API, Docker image and Kubernetes Deployment/Service.
+- **Data tier:** PostgreSQL for the existing Node.js API.
+- **Local runtime:** Docker Compose.
 
-## DevOps capabilities in this repository
+**Migration status:** the Java catalog service is an initial independently deployable microservice. Its sample catalog is in-memory and the existing frontend still calls the legacy Node API. The project is therefore a staged migration lab, not a completed full business-domain microservices conversion.
 
-- GitHub Actions CI: backend unit tests, frontend lint/build, Docker Compose smoke tests, Helm lint/render and Terraform formatting/validation.
-- Jenkins declarative pipeline: Node validation, image build, Compose smoke test, Helm checks, optional SonarQube and Trivy stages, optional commit-tagged Docker Hub publishing.
-- Docker: multi-stage frontend build, non-root backend, unprivileged Nginx frontend, health checks and a private database network.
-- Kubernetes packaging: Helm chart with Deployments, Services, StatefulSet/PVC, probes, resource requests/limits, external Secret support, optional HPA/PDB and optional Ingress.
-- GitOps starter: Argo CD Application configured for manual sync until environment values are reviewed.
-- Infrastructure as code starter: Terraform VPC, EKS managed node group and immutable ECR repositories.
-- Operations: security baseline, Kubernetes troubleshooting, deployment rollback and PostgreSQL backup/restore runbooks.
-- Monitoring starter: PrometheusRule examples and kube-prometheus-stack guide.
+## Toolchain
 
-> This is a learning/portfolio lab, not yet production-ready. The Helm PostgreSQL StatefulSet, default lab credentials, Terraform starter, monitoring rules and optional integrations must be reviewed and tested for the target environment. A project does not itself establish years of professional experience.
+- **Jenkins:** CI pipeline for Maven tests, Node tests, frontend build, SonarQube (optional), Docker image builds, Trivy (optional), Compose smoke tests and optional registry publishing.
+- **Maven:** builds and tests the Java catalog service. The Node.js and React components correctly continue to use npm.
+- **SonarQube:** root `sonar-project.properties` config analyzes Java and JavaScript/TypeScript sources. Configure `SONAR_HOST_URL` and Jenkins credential `sonarqube-token`, then enable the pipeline parameter.
+- **Docker:** builds frontend, backend and catalog service images.
+- **Kubernetes + Helm:** includes Deployments/Services for frontend, backend and catalog, plus the learning PostgreSQL StatefulSet/PVC and probes/resources.
+- **Argo CD:** manual-sync GitOps starter pointing to the Helm chart. Review environment-specific image tags and secrets before syncing.
+- **Terraform:** starter for VPC, EKS managed nodes and ECR repositories. It does not create anything until you explicitly run Terraform.
+- **Monitoring and runbooks:** PrometheusRule examples, troubleshooting, rollback and PostgreSQL backup/restore guidance.
 
 ## Repository layout
 
 ```text
-backend/          Node.js API, tests and Dockerfile
-frontend/         React UI, Nginx config and multi-stage Dockerfile
-database/         PostgreSQL initialization SQL
-docker-compose.yml  Local three-tier stack
-Jenkinsfile       CI pipeline with opt-in integrations
-.github/workflows/ci.yml  Pull request CI
-helm/bookstore/   Kubernetes Helm chart
-argocd/           GitOps Application starter
-terraform/eks/    AWS VPC, EKS and ECR starter
-monitoring/       Prometheus alert rules and Grafana guide
-docs/             Architecture, CI/CD, security and runbooks
+frontend/                       React/Vite and Nginx
+backend/                        Node.js/Express API and tests
+services/catalog-service/       Java/Spring Boot microservice and Maven build
+database/                       PostgreSQL initialization SQL
+docker-compose.yml              Local multi-container stack
+Jenkinsfile                     CI pipeline and optional integrations
+sonar-project.properties        SonarQube project configuration
+.github/workflows/ci.yml        GitHub Actions validation
+helm/bookstore/                 Kubernetes Helm chart
+argocd/                         Argo CD Application starter
+terraform/eks/                  AWS infrastructure starter
+monitoring/                     Prometheus alerts and guide
+docs/                           Architecture, setup and operational runbooks
 ```
 
 ## Prerequisites
 
-- Git
-- Docker Engine with Docker Compose v2
-- Node.js 22/npm for local development
+- Git and Docker Engine with Docker Compose v2
+- Node.js 22/npm for frontend and backend development
+- Java 21 and Maven for catalog service development
 - For Kubernetes: kubectl and Helm 3
-- For cloud provisioning: AWS CLI, Terraform, an AWS account and appropriate IAM permissions
+- For AWS: AWS CLI, Terraform, an AWS account and reviewed IAM permissions
 
 ## Run locally
 
@@ -53,17 +56,19 @@ From the repository root:
 ```bash
 docker compose up --build -d
 docker compose ps
-curl -fsS http://localhost:5000/api/health
 curl -fsS http://localhost:5000/api/ready
 curl -fsS http://localhost:5000/api/books
+curl -fsS http://localhost:8081/api/health
+curl -fsS http://localhost:8081/api/catalog/books
 curl -fsS http://localhost:8080/api/books
 ```
 
-Open http://localhost:8080. PostgreSQL is intentionally not published to the host; use `docker compose exec database psql -U bookuser -d bookstore` for local database inspection.
+Open the UI at http://localhost:8080. PostgreSQL is intentionally not published to the host. Inspect it with `docker compose exec database psql -U bookuser -d bookstore`.
 
-Run tests locally:
+## Run validations
 
 ```bash
+mvn -B -f services/catalog-service/pom.xml clean verify
 cd backend && npm ci && npm test
 cd ../frontend && npm ci && npm run lint && npm run build
 cd ..
@@ -71,29 +76,22 @@ helm lint ./helm/bookstore
 helm template bookstore ./helm/bookstore --namespace bookstore
 ```
 
-Stop the stack with `docker compose down`. To remove the local database volume too (destructive), use `docker compose down -v`.
+Stop services with `docker compose down`. To remove the local PostgreSQL volume too (destructive), use `docker compose down -v`.
 
-The Compose database password and Helm default password are for disposable local development only. Never reuse them in shared or production environments.
+## Recommended learning sequence
 
-## Recommended learning path
+1. Start and test the Compose stack.
+2. Review GitHub Actions and Jenkins stages; configure SonarQube and registry credentials only when ready.
+3. Build and scan all three application images.
+4. Deploy with Helm to a disposable Kubernetes cluster and practice probes, logs, rollouts and rollback.
+5. Configure Argo CD manual sync with reviewed image tags.
+6. Only then review Terraform and AWS costs before creating EKS infrastructure.
 
-1. Run the app locally and understand each tier and health/readiness check.
-2. Review GitHub Actions and fix any failed CI stages.
-3. Configure Jenkins Multibranch Pipeline and optional SonarQube/Trivy integrations.
-4. Build/push immutable images to a registry.
-5. Deploy the Helm chart to a disposable Kubernetes cluster and practice troubleshooting.
-6. Configure environment-specific values and manually sync Argo CD.
-7. Add monitoring, test alert delivery and practice rollback/restore.
-8. Review Terraform, set a supported EKS version and trusted API endpoint CIDR, then plan AWS infrastructure.
-9. Deploy to EKS, validate the workload and destroy lab resources when finished.
+## Safety notes
 
-## Engineering principles
+- Local DB passwords are disposable lab defaults; never reuse them in shared/cloud environments.
+- Never commit tokens, credentials, kubeconfigs, private keys or Terraform state.
+- EKS, NAT gateways, EC2 nodes, load balancers and data transfer can incur charges.
+- A portfolio project demonstrates practice; it does not itself establish years of professional experience.
 
-- Never commit real credentials, tokens, kubeconfigs, private keys, Terraform state or database dumps.
-- Prefer immutable commit-SHA image tags; promote the same tested image between environments.
-- Keep PostgreSQL private and use least-privilege IAM/RBAC.
-- Review CI and rendered manifests before deploying.
-- Test backup/restore, rollback and failure scenarios.
-- Record evidence, diagnosis, remediation and follow-up actions for each operational exercise.
-
-See the runbooks under `docs/runbooks/` and the setup notes under `docs/`.
+See `docs/microservices-toolchain.md` and the runbooks under `docs/runbooks/`.
