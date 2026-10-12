@@ -1,48 +1,99 @@
 # Bookstore 3-Tier DevOps Platform
 
-A hands-on portfolio project for learning production-style delivery practices around a three-tier application.
+A hands-on DevOps portfolio lab around a three-tier application. The repository is designed to be practiced in Killercoda first and then moved to a local Kubernetes cluster or AWS EKS.
 
-## Architecture
-- **Presentation:** React + Vite served by Nginx.
-- **Application:** Node.js + Express REST API.
-- **Data:** PostgreSQL.
-- **Local runtime:** Docker Compose.
-- **Planned delivery stack:** Jenkins, SonarQube, Docker, Trivy, Helm, Argo CD, Kubernetes, Terraform, AWS EKS, Prometheus and Grafana.
+## Application architecture
 
-> This is an evolving learning lab, not yet a production-ready service. Do not use it for real workloads until security, availability, backup, testing and operational requirements are completed.
+- **Presentation tier:** React + Vite served by unprivileged Nginx.
+- **Application tier:** Node.js + Express REST API.
+- **Data tier:** PostgreSQL.
+- **Local runtime:** Docker Compose with health-gated dependencies and a persistent development database volume.
+
+## DevOps capabilities in this repository
+
+- GitHub Actions CI: backend unit tests, frontend lint/build, Docker Compose smoke tests, Helm lint/render and Terraform formatting/validation.
+- Jenkins declarative pipeline: Node validation, image build, Compose smoke test, Helm checks, optional SonarQube and Trivy stages, optional commit-tagged Docker Hub publishing.
+- Docker: multi-stage frontend build, non-root backend, unprivileged Nginx frontend, health checks and a private database network.
+- Kubernetes packaging: Helm chart with Deployments, Services, StatefulSet/PVC, probes, resource requests/limits, external Secret support, optional HPA/PDB and optional Ingress.
+- GitOps starter: Argo CD Application configured for manual sync until environment values are reviewed.
+- Infrastructure as code starter: Terraform VPC, EKS managed node group and immutable ECR repositories.
+- Operations: security baseline, Kubernetes troubleshooting, deployment rollback and PostgreSQL backup/restore runbooks.
+- Monitoring starter: PrometheusRule examples and kube-prometheus-stack guide.
+
+> This is a learning/portfolio lab, not yet production-ready. The Helm PostgreSQL StatefulSet, default lab credentials, Terraform starter, monitoring rules and optional integrations must be reviewed and tested for the target environment. A project does not itself establish years of professional experience.
+
+## Repository layout
+
+```text
+backend/          Node.js API, tests and Dockerfile
+frontend/         React UI, Nginx config and multi-stage Dockerfile
+database/         PostgreSQL initialization SQL
+docker-compose.yml  Local three-tier stack
+Jenkinsfile       CI pipeline with opt-in integrations
+.github/workflows/ci.yml  Pull request CI
+helm/bookstore/   Kubernetes Helm chart
+argocd/           GitOps Application starter
+terraform/eks/    AWS VPC, EKS and ECR starter
+monitoring/       Prometheus alert rules and Grafana guide
+docs/             Architecture, CI/CD, security and runbooks
+```
+
+## Prerequisites
+
+- Git
+- Docker Engine with Docker Compose v2
+- Node.js 22/npm for local development
+- For Kubernetes: kubectl and Helm 3
+- For cloud provisioning: AWS CLI, Terraform, an AWS account and appropriate IAM permissions
 
 ## Run locally
-Prerequisites: Git and Docker Engine with the Docker Compose plugin.
+
+From the repository root:
 
 ```bash
 docker compose up --build -d
 docker compose ps
 curl -fsS http://localhost:5000/api/health
+curl -fsS http://localhost:5000/api/ready
 curl -fsS http://localhost:5000/api/books
 curl -fsS http://localhost:8080/api/books
 ```
 
-Open http://localhost:8080. Stop with `docker compose down`. To delete the local database volume too (destructive), use `docker compose down -v`.
+Open http://localhost:8080. PostgreSQL is intentionally not published to the host; use `docker compose exec database psql -U bookuser -d bookstore` for local database inspection.
 
-The Compose database password is for disposable local development only. Never reuse it in shared or production environments.
+Run tests locally:
 
-## Planned milestones
-1. Repeatable local environment and repository hygiene.
-2. Automated tests, linting and CI quality gates.
-3. Jenkins pipeline and SonarQube.
-4. Kubernetes manifests and troubleshooting.
-5. Helm and Argo CD GitOps.
-6. Trivy scanning, secrets handling and RBAC.
-7. Prometheus/Grafana, alerts and incident runbooks.
-8. Terraform-managed AWS EKS, ECR and ingress.
-9. Backup/restore, rollback, disaster recovery and cost controls.
+```bash
+cd backend && npm ci && npm test
+cd ../frontend && npm ci && npm run lint && npm run build
+cd ..
+helm lint ./helm/bookstore
+helm template bookstore ./helm/bookstore --namespace bookstore
+```
+
+Stop the stack with `docker compose down`. To remove the local database volume too (destructive), use `docker compose down -v`.
+
+The Compose database password and Helm default password are for disposable local development only. Never reuse them in shared or production environments.
+
+## Recommended learning path
+
+1. Run the app locally and understand each tier and health/readiness check.
+2. Review GitHub Actions and fix any failed CI stages.
+3. Configure Jenkins Multibranch Pipeline and optional SonarQube/Trivy integrations.
+4. Build/push immutable images to a registry.
+5. Deploy the Helm chart to a disposable Kubernetes cluster and practice troubleshooting.
+6. Configure environment-specific values and manually sync Argo CD.
+7. Add monitoring, test alert delivery and practice rollback/restore.
+8. Review Terraform, set a supported EKS version and trusted API endpoint CIDR, then plan AWS infrastructure.
+9. Deploy to EKS, validate the workload and destroy lab resources when finished.
 
 ## Engineering principles
-- Never commit real credentials, access tokens, kubeconfigs or private keys.
-- Prefer immutable image tags (commit SHA or release version) over `latest`.
-- Keep deployment configuration version-controlled.
-- Require tests and quality checks before releases.
-- Validate in a disposable lab before applying changes to AWS.
-- Document incident evidence, diagnosis, remediation and prevention.
 
-A project does not by itself establish five years of professional experience. Implement, test and document each capability before presenting it as completed.
+- Never commit real credentials, tokens, kubeconfigs, private keys, Terraform state or database dumps.
+- Prefer immutable commit-SHA image tags; promote the same tested image between environments.
+- Keep PostgreSQL private and use least-privilege IAM/RBAC.
+- Review CI and rendered manifests before deploying.
+- Test backup/restore, rollback and failure scenarios.
+- Record evidence, diagnosis, remediation and follow-up actions for each operational exercise.
+
+See the runbooks under `docs/runbooks/` and the setup notes under `docs/`.
