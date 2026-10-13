@@ -16,6 +16,23 @@ services:
     networks: [bookstore-net]
     restart: unless-stopped
 
+  catalog-database:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: catalogdb
+      POSTGRES_USER: cataloguser
+      POSTGRES_PASSWORD: ${CATALOG_DB_PASSWORD:-local-catalog-only-change-me}
+    volumes:
+      - catalog_data:/var/lib/postgresql/data
+      - ./database/catalog-init.sql:/docker-entrypoint-initdb.d/01-catalog-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cataloguser -d catalogdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    networks: [bookstore-net]
+    restart: unless-stopped
+
   backend:
     build: ./backend
     image: bookstore-backend:local
@@ -46,14 +63,20 @@ services:
     image: bookstore-catalog-service:local
     environment:
       SERVER_PORT: "8081"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://catalog-database:5432/catalogdb
+      SPRING_DATASOURCE_USERNAME: cataloguser
+      SPRING_DATASOURCE_PASSWORD: ${CATALOG_DB_PASSWORD:-local-catalog-only-change-me}
     ports:
       - "8081:8081"
+    depends_on:
+      catalog-database:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/actuator/health/readiness >/dev/null || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 10
-      start_period: 20s
+      start_period: 25s
     networks: [bookstore-net]
     restart: unless-stopped
 
@@ -63,7 +86,7 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      backend:
+      catalog-service:
         condition: service_healthy
     networks: [bookstore-net]
     restart: unless-stopped
@@ -74,3 +97,4 @@ networks:
 
 volumes:
   postgres_data:
+  catalog_data:
