@@ -30,8 +30,21 @@ function App() {
   }, []);
 
   useEffect(() => {
-    loadData().catch((err) => setError(err.message));
-  }, [loadData]);
+    let active = true;
+    Promise.all([
+      requestJson('/api/catalog/books'),
+      requestJson('/api/inventory'),
+      requestJson('/api/orders'),
+    ]).then(([bookData, inventoryData, orderData]) => {
+      if (!active) return;
+      setBooks(bookData);
+      setInventory(inventoryData);
+      setOrders(orderData);
+    }).catch((err) => {
+      if (active) setError(err.message);
+    });
+    return () => { active = false; };
+  }, []);
 
   async function placeDemoOrder(book) {
     setBusyBookId(book.id);
