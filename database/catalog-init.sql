@@ -1,0 +1,17 @@
+CREATE TABLE IF NOT EXISTS catalog_books (
+    id BIGSERIAL PRIMARY KEY,
+    title VARCHAR(160) NOT NULL,
+    author VARCHAR(120) NOT NULL,
+    category VARCHAR(80) NOT NULL,
+    price NUMERIC(10,2) NOT NULL
+);
+
+INSERT INTO catalog_books (title, author, category, price)
+SELECT 'DevOps for Beginners', 'John Doe', 'DevOps', 499.00
+WHERE NOT EXISTS (SELECT 1 FROM catalog_books WHERE title = 'DevOps for Beginners');
+INSERT INTO catalog_books (title, author, category, price)
+SELECT 'Kubernetes Basics', 'Jane Doe', 'Cloud Native', 599.00
+WHERE NOT EXISTS (SELECT 1 FROM catalog_books WHERE title = 'Kubernetes Basics');
+INSERT INTO catalog_books (title, author, category, price)
+SELECT 'Mastering Jenkins', 'Alex Smith', 'CI/CD', 699.00
+WHERE NOT EXISTS (SELECT 1 FROM catalog_books WHERE title = 'Mastering Jenkins');
