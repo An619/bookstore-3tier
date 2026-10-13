@@ -5,8 +5,8 @@ A hands-on DevOps portfolio lab around a three-tier application. The repository 
 ## Application architecture
 
 - **Presentation tier:** React + Vite served by unprivileged Nginx.
-- **Application tier (legacy):** Node.js + Express REST API.
-- **Microservices migration slice:** Java 21 + Spring Boot Catalog Service built with Maven, with its own API, tests, container image and Helm/Argo CD deployment artifacts. The legacy Node API remains during this staged migration.
+- **Catalog domain:** Java 21 + Spring Boot Catalog Service built with Maven, with its own PostgreSQL database, API, tests, container image and Helm/Argo CD deployment artifacts.
+- **Legacy application routes:** Node.js + Express API remains for responsibilities not yet migrated.
 - **Data tier:** PostgreSQL.
 - **Local runtime:** Docker Compose with health-gated dependencies and a persistent development database volume.
 
@@ -21,7 +21,7 @@ A hands-on DevOps portfolio lab around a three-tier application. The repository 
 - Operations: security baseline, Kubernetes troubleshooting, deployment rollback and PostgreSQL backup/restore runbooks.
 - Monitoring starter: PrometheusRule examples and kube-prometheus-stack guide.
 
-> This is a learning/portfolio lab, not yet production-ready. The Helm PostgreSQL StatefulSet, default lab credentials, Terraform starter, monitoring rules and optional integrations must be reviewed and tested for the target environment. A project does not itself establish years of professional experience.
+> This is a learning/portfolio lab and a staged microservices migration, not yet production-ready. The Helm PostgreSQL StatefulSet, default lab credentials, Terraform starter, monitoring rules and optional integrations must be reviewed and tested for the target environment. A project does not itself establish years of professional experience.
 
 ## Repository layout
 
@@ -30,7 +30,7 @@ backend/          Node.js API, tests and Dockerfile
 services/catalog-service/  Java 21/Spring Boot microservice, Maven build, tests and Dockerfile
 frontend/         React UI, Nginx config and multi-stage Dockerfile
 database/         PostgreSQL initialization SQL
-docker-compose.yml  Local three-tier stack
+docker-compose.yml  Local stack with separate catalog database
 Jenkinsfile       CI pipeline with Maven, SonarQube and opt-in integrations
 services/catalog-service/  Java microservice and Maven build
 .github/workflows/ci.yml  Pull request CI
@@ -59,7 +59,7 @@ docker compose ps
 curl -fsS http://localhost:5000/api/health
 curl -fsS http://localhost:5000/api/ready
 curl -fsS http://localhost:5000/api/books
-curl -fsS http://localhost:8080/api/books
+curl -fsS http://localhost:8080/api/catalog/books
 curl -fsS http://localhost:8081/actuator/health/readiness
 curl -fsS http://localhost:8081/api/catalog/books
 ```
