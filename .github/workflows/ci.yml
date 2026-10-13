@@ -37,6 +37,17 @@ jobs:
           npm ci
           npm test
 
+      - name: Set up Java for Maven microservice
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Validate Java catalog microservice
+        working-directory: services/catalog-service
+        run: mvn -B -ntp verify
+
       - name: Validate frontend
         working-directory: frontend
         run: |
@@ -49,11 +60,14 @@ jobs:
         with:
           version: v3.17.3
 
-      - name: Lint and render Helm chart
+      - name: Lint and render Helm charts
         run: |
           helm lint ./helm/bookstore
           helm template bookstore ./helm/bookstore --namespace bookstore > /tmp/bookstore-rendered.yaml
           test -s /tmp/bookstore-rendered.yaml
+          helm lint ./helm/catalog-service
+          helm template catalog-service ./helm/catalog-service --namespace bookstore > /tmp/catalog-rendered.yaml
+          test -s /tmp/catalog-rendered.yaml
 
       - name: Build and start three-tier stack
         run: docker compose up --build -d
@@ -74,6 +88,8 @@ jobs:
           curl --fail --silent http://localhost:5000/api/books | grep -q "DevOps for Beginners"
           curl --fail --silent http://localhost:8080/ > /dev/null
           curl --fail --silent http://localhost:8080/api/books | grep -q "Kubernetes Basics"
+          curl --fail --silent http://localhost:8081/actuator/health/readiness | grep -q '"status":"UP"'
+          curl --fail --silent http://localhost:8081/api/catalog/books | grep -q 'Kubernetes Basics'
 
       - name: Print diagnostic logs on failure
         if: failure()
