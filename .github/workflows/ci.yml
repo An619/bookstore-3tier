@@ -87,7 +87,7 @@ jobs:
           done
           curl --fail --silent http://localhost:5000/api/books | grep -q "DevOps for Beginners"
           curl --fail --silent http://localhost:8080/ > /dev/null
-          curl --fail --silent http://localhost:8080/api/books | grep -q "Kubernetes Basics"
+          curl --fail --silent http://localhost:8080/api/catalog/books | grep -q "Kubernetes Basics"
           curl --fail --silent http://localhost:8081/actuator/health/readiness | grep -q '"status":"UP"'
           curl --fail --silent http://localhost:8081/api/catalog/books | grep -q 'Kubernetes Basics'
 
