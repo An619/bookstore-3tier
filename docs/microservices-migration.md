@@ -1,6 +1,14 @@
 # Microservices migration status
 
-The repository now has a **real catalog migration slice**: the React frontend calls a separately deployable Java 21/Spring Boot Catalog Service through Nginx, and that service owns a separate PostgreSQL database. The old Node.js API remains temporarily for routes that have not yet migrated.
+The repository now has three separately deployable Java 21/Spring Boot services—Catalog, Orders and Inventory—each with its own PostgreSQL database. Nginx routes all three domain APIs while the legacy Node.js API remains temporarily for routes not yet migrated.
+
+## Service APIs
+
+- Catalog: `GET /api/catalog/books`, `GET /api/catalog/books/{id}`
+- Orders: `GET /api/orders`, `GET /api/orders/{id}`, `POST /api/orders` with `customerName`, `bookId`, and `quantity`
+- Inventory: `GET /api/inventory`, `GET /api/inventory/{bookId}`, `POST /api/inventory/{bookId}/reserve?quantity=1`, `POST /api/inventory/{bookId}/release?quantity=1`
+
+The Orders service validates basic order input. Inventory rejects invalid quantities and insufficient stock. These are learning-grade APIs; order creation does not yet orchestrate an atomic stock reservation or payment.
 
 ## Catalog Service API
 
@@ -10,7 +18,7 @@ The repository now has a **real catalog migration slice**: the React frontend ca
 - `GET /actuator/health/liveness`
 - `GET /actuator/health/readiness` (includes database readiness)
 
-The service uses Spring Data JPA and PostgreSQL. Its local schema is in `database/catalog-init.sql`; Docker Compose persists catalog data in the `catalog_data` volume.
+Each service uses Spring Data JPA and PostgreSQL. SQL initialization files are under `database/`; Docker Compose persists each service's data in its own named volume.
 
 ## Run and verify locally
 
@@ -22,7 +30,11 @@ docker compose ps
 curl -fsS http://localhost:8080/api/catalog/books
 curl -fsS http://localhost:8081/api/catalog/books
 curl -fsS http://localhost:8081/actuator/health/readiness
-docker compose logs -f catalog-service
+curl -fsS http://localhost:8082/api/orders
+curl -fsS http://localhost:8083/api/inventory
+curl -fsS http://localhost:8080/api/orders
+curl -fsS http://localhost:8080/api/inventory
+docker compose logs -f orders-service inventory-service catalog-service
 ```
 
 Open http://localhost:8080 to confirm the UI gets books from the Catalog Service. The legacy Node.js API remains available on port 5000 during the migration.
@@ -38,7 +50,7 @@ mvn -B -ntp verify
 
 ## Kubernetes deployment
 
-The Helm chart includes a PostgreSQL StatefulSet, private ClusterIP Service, PVC, SQL initialization ConfigMap, and Catalog Service Deployment/Service. Create the database credential Secret before installing the chart:
+Each service has a Helm chart with a Deployment/Service and a service-owned PostgreSQL StatefulSet/PVC. Create the matching Secret for each chart before installation. Create the database credential Secret before installing the chart:
 
 ```bash
 kubectl create namespace bookstore
@@ -64,4 +76,4 @@ Use a unique secret password in real environments. The in-chart PostgreSQL workl
 
 ## Remaining migration work
 
-This is not yet a complete microservices conversion. Catalog is independently deployed and owns its data, but order, inventory, customer/identity and checkout responsibilities have not yet been extracted from the legacy API. The next services should be designed around business capabilities, separate data ownership, and explicit API contracts rather than just creating extra demo endpoints.
+This is a stronger staged microservices migration, but it is not production-complete. Catalog, Orders and Inventory are independently deployable and own separate databases. Order creation does not yet reserve stock transactionally; customer identity, payment/checkout, inter-service authentication, retries/idempotency, distributed tracing, contract testing and production database operations remain future work.
