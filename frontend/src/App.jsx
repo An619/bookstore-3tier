@@ -6,10 +6,10 @@ function App() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetch('/api/books')
+    fetch('/api/catalog/books')
       .then((response) => {
         if (!response.ok) {
-          throw new Error('Failed to fetch books');
+          throw new Error('Failed to fetch books from Catalog Service');
         }
         return response.json();
       })
@@ -21,20 +21,17 @@ function App() {
     <div className="app">
       <header>
         <h1>📚 Bookstore</h1>
-        <p>3-Tier DevOps Application</p>
+        <p>Microservices-enabled DevOps Application</p>
       </header>
-
       <main>
         <h2>Available Books</h2>
-
         {error && <p className="error">{error}</p>}
-
         <div className="books">
           {books.map((book) => (
             <div className="book" key={book.id}>
               <h3>{book.title}</h3>
               <p>Author: {book.author}</p>
-              <strong>₹{book.price}</strong>
+              <strong>₹{Number(book.price).toFixed(2)}</strong>
             </div>
           ))}
         </div>
