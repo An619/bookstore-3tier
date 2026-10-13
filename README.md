@@ -5,16 +5,17 @@ A hands-on DevOps portfolio lab around a three-tier application. The repository 
 ## Application architecture
 
 - **Presentation tier:** React + Vite served by unprivileged Nginx.
-- **Application tier:** Node.js + Express REST API.
+- **Application tier (legacy):** Node.js + Express REST API.
+- **Microservices migration slice:** Java 21 + Spring Boot Catalog Service built with Maven, with its own API, tests, container image and Helm/Argo CD deployment artifacts. The legacy Node API remains during this staged migration.
 - **Data tier:** PostgreSQL.
 - **Local runtime:** Docker Compose with health-gated dependencies and a persistent development database volume.
 
 ## DevOps capabilities in this repository
 
 - GitHub Actions CI: backend unit tests, frontend lint/build, Docker Compose smoke tests, Helm lint/render and Terraform formatting/validation.
-- Jenkins declarative pipeline: Node validation, image build, Compose smoke test, Helm checks, optional SonarQube and Trivy stages, optional commit-tagged Docker Hub publishing.
+- Jenkins declarative pipeline: Node and Maven validation, image build, Compose smoke test, Helm checks, optional SonarQube and Trivy stages, optional commit-tagged Docker Hub/ECR publishing for all application images.
 - Docker: multi-stage frontend build, non-root backend, unprivileged Nginx frontend, health checks and a private database network.
-- Kubernetes packaging: Helm chart with Deployments, Services, StatefulSet/PVC, probes, resource requests/limits, external Secret support, optional HPA/PDB and optional Ingress.
+- Kubernetes packaging: Helm chart for the legacy three-tier stack and a separate Helm chart for the Java Catalog Service, with probes, resources and non-root runtime configuration.
 - GitOps starter: Argo CD Application configured for manual sync until environment values are reviewed.
 - Infrastructure as code starter: Terraform VPC, EKS managed node group and immutable ECR repositories.
 - Operations: security baseline, Kubernetes troubleshooting, deployment rollback and PostgreSQL backup/restore runbooks.
@@ -26,10 +27,12 @@ A hands-on DevOps portfolio lab around a three-tier application. The repository 
 
 ```text
 backend/          Node.js API, tests and Dockerfile
+services/catalog-service/  Java 21/Spring Boot microservice, Maven build, tests and Dockerfile
 frontend/         React UI, Nginx config and multi-stage Dockerfile
 database/         PostgreSQL initialization SQL
 docker-compose.yml  Local three-tier stack
-Jenkinsfile       CI pipeline with opt-in integrations
+Jenkinsfile       CI pipeline with Maven, SonarQube and opt-in integrations
+services/catalog-service/  Java microservice and Maven build
 .github/workflows/ci.yml  Pull request CI
 helm/bookstore/   Kubernetes Helm chart
 argocd/           GitOps Application starter
@@ -57,6 +60,8 @@ curl -fsS http://localhost:5000/api/health
 curl -fsS http://localhost:5000/api/ready
 curl -fsS http://localhost:5000/api/books
 curl -fsS http://localhost:8080/api/books
+curl -fsS http://localhost:8081/actuator/health/readiness
+curl -fsS http://localhost:8081/api/catalog/books
 ```
 
 Open http://localhost:8080. PostgreSQL is intentionally not published to the host; use `docker compose exec database psql -U bookuser -d bookstore` for local database inspection.
@@ -67,8 +72,11 @@ Run tests locally:
 cd backend && npm ci && npm test
 cd ../frontend && npm ci && npm run lint && npm run build
 cd ..
+cd services/catalog-service && mvn -B -ntp verify && cd ../..
 helm lint ./helm/bookstore
+helm lint ./helm/catalog-service
 helm template bookstore ./helm/bookstore --namespace bookstore
+helm template catalog-service ./helm/catalog-service --namespace bookstore
 ```
 
 Stop the stack with `docker compose down`. To remove the local database volume too (destructive), use `docker compose down -v`.
@@ -80,7 +88,7 @@ The Compose database password and Helm default password are for disposable local
 1. Run the app locally and understand each tier and health/readiness check.
 2. Review GitHub Actions and fix any failed CI stages.
 3. Configure Jenkins Multibranch Pipeline and optional SonarQube/Trivy integrations.
-4. Build/push immutable images to a registry.
+4. Validate the Java Catalog Service with Maven and SonarQube, then build/push immutable images to a registry.
 5. Deploy the Helm chart to a disposable Kubernetes cluster and practice troubleshooting.
 6. Configure environment-specific values and manually sync Argo CD.
 7. Add monitoring, test alert delivery and practice rollback/restore.
