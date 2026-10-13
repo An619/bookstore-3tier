@@ -6,6 +6,15 @@ image:
 service:
   type: ClusterIP
   port: 8081
+database:
+  deploy: true
+  host: catalog-service-postgres
+  port: 5432
+  name: catalogdb
+  username: cataloguser
+  existingSecret: catalog-db-secret
+  storage: 5Gi
+  image: postgres:16-alpine
 resources:
   requests:
     cpu: 100m
