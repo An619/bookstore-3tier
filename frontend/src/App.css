@@ -57,3 +57,32 @@ main {
 .error {
   color: red;
 }
+
+.book button {
+  margin-top: 14px;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  padding: 11px 14px;
+  background: #1d4ed8;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.book button:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+main section {
+  margin-top: 36px;
+  background: #fff;
+  padding: 24px;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+main section li {
+  margin: 10px 0;
+}

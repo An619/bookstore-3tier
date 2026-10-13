@@ -1,0 +1,14 @@
+replicaCount: 1
+image:
+  repository: bookstore-inventory-service
+  tag: local
+  pullPolicy: IfNotPresent
+service:
+  port: 8083
+database:
+  host: inventory-service-postgres
+  name: inventorydb
+  username: serviceuser
+  secretName: inventory-db-secret
+  storage: 5Gi
+  image: postgres:16-alpine

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.database.host }}
+  labels:
+    app.kubernetes.io/name: catalog-postgres
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: catalog-postgres
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: postgres
+      port: {{ .Values.database.port }}
+      targetPort: postgres

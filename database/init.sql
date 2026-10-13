@@ -5,8 +5,15 @@ CREATE TABLE IF NOT EXISTS books (
     price NUMERIC(10,2) NOT NULL
 );
 
+-- Safe to re-run during development: only insert a seed title when it is absent.
 INSERT INTO books (title, author, price)
-VALUES
-    ('DevOps for Beginners', 'John Doe', 499.00),
-    ('Kubernetes Basics', 'Jane Doe', 599.00),
-    ('Mastering Jenkins', 'Alex Smith', 699.00);
+SELECT 'DevOps for Beginners', 'John Doe', 499.00
+WHERE NOT EXISTS (SELECT 1 FROM books WHERE title = 'DevOps for Beginners');
+
+INSERT INTO books (title, author, price)
+SELECT 'Kubernetes Basics', 'Jane Doe', 599.00
+WHERE NOT EXISTS (SELECT 1 FROM books WHERE title = 'Kubernetes Basics');
+
+INSERT INTO books (title, author, price)
+SELECT 'Mastering Jenkins', 'Alex Smith', 699.00
+WHERE NOT EXISTS (SELECT 1 FROM books WHERE title = 'Mastering Jenkins');

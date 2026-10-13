@@ -1,0 +1,16 @@
+# Copy to terraform.tfvars and replace the placeholder with your current public IP /32.
+aws_region        = "ap-south-1"
+project_name      = "bookstore"
+environment       = "lab"
+
+# Set a currently supported EKS version for your region before applying.
+kubernetes_version = "REPLACE_WITH_SUPPORTED_EKS_VERSION"
+
+# Never use 0.0.0.0/0 for the public EKS API endpoint.
+cluster_endpoint_public_access_cidrs = ["REPLACE_WITH_YOUR_PUBLIC_IP/32"]
+
+availability_zone_count = 2
+node_instance_types      = ["t3.medium"]
+node_desired_size        = 2
+node_min_size            = 1
+node_max_size            = 3

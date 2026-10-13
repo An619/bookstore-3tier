@@ -1,0 +1,159 @@
+name: Bookstore CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bookstore-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-and-smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Validate backend
+        working-directory: backend
+        run: |
+          npm ci
+          npm test
+
+      - name: Set up Java for Maven microservice
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Validate Java catalog microservice
+        working-directory: services/catalog-service
+        run: |
+          for attempt in 1 2 3; do
+            mvn -B -ntp verify && exit 0
+            echo "Maven attempt $attempt failed; retrying in case the artifact repository is temporarily unavailable"
+            sleep $((attempt * 5))
+          done
+          exit 1
+
+      - name: Validate orders microservice
+        working-directory: services/orders-service
+        run: mvn -B -ntp verify
+
+      - name: Validate inventory microservice
+        working-directory: services/inventory-service
+        run: mvn -B -ntp verify
+
+      - name: Validate frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+          npm run build
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.17.3
+
+      - name: Lint and render Helm charts
+        run: |
+          helm lint ./helm/bookstore
+          helm template bookstore ./helm/bookstore --namespace bookstore > /tmp/bookstore-rendered.yaml
+          test -s /tmp/bookstore-rendered.yaml
+          helm lint ./helm/catalog-service
+          helm template catalog-service ./helm/catalog-service --namespace bookstore > /tmp/catalog-rendered.yaml
+          test -s /tmp/catalog-rendered.yaml
+          helm lint ./helm/orders-service
+          helm template orders-service ./helm/orders-service --namespace bookstore > /tmp/orders-rendered.yaml
+          test -s /tmp/orders-rendered.yaml
+          helm lint ./helm/inventory-service
+          helm template inventory-service ./helm/inventory-service --namespace bookstore > /tmp/inventory-rendered.yaml
+          test -s /tmp/inventory-rendered.yaml
+
+      - name: Build and start three-tier stack
+        run: docker compose up --build -d
+
+      - name: Smoke test API and frontend proxy
+        run: |
+          set -eu
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:5000/api/ready; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              docker compose logs
+              exit 1
+            fi
+            sleep 3
+          done
+          for service_port in 8081 8082 8083; do
+            for attempt in $(seq 1 40); do
+              if curl --fail --silent "http://localhost:${service_port}/actuator/health/readiness" | grep -q '"status":"UP"'; then
+                break
+              fi
+              if [ "$attempt" -eq 40 ]; then
+                docker compose logs
+                exit 1
+              fi
+              sleep 3
+            done
+          done
+          curl --fail --silent http://localhost:5000/api/books | grep -q "DevOps for Beginners"
+          curl --fail --silent http://localhost:8080/ > /dev/null
+          curl --fail --silent http://localhost:8080/api/catalog/books | grep -q "Kubernetes Basics"
+          curl --fail --silent http://localhost:8081/api/catalog/books | grep -q 'Kubernetes Basics'
+          curl --fail --silent http://localhost:8082/api/orders | grep -q 'CREATED'
+          curl --fail --silent http://localhost:8083/api/inventory | grep -q 'availableQuantity'
+          curl --fail --silent http://localhost:8080/api/orders | grep -q 'CREATED'
+          curl --fail --silent http://localhost:8080/api/inventory | grep -q 'availableQuantity'
+
+      - name: Print diagnostic logs on failure
+        if: failure()
+        run: docker compose logs --no-color || true
+
+      - name: Stop stack
+        if: always()
+        run: docker compose down -v --remove-orphans || true
+
+  terraform-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: Check Terraform formatting
+        run: terraform fmt -check -recursive terraform/eks
+
+      - name: Initialize Terraform without a backend
+        working-directory: terraform/eks
+        run: terraform init -backend=false -input=false
+
+      - name: Validate Terraform configuration
+        working-directory: terraform/eks
+        run: terraform validate
