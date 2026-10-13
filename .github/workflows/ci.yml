@@ -105,10 +105,21 @@ jobs:
             fi
             sleep 3
           done
+          for service_port in 8081 8082 8083; do
+            for attempt in $(seq 1 40); do
+              if curl --fail --silent "http://localhost:${service_port}/actuator/health/readiness" | grep -q '"status":"UP"'; then
+                break
+              fi
+              if [ "$attempt" -eq 40 ]; then
+                docker compose logs
+                exit 1
+              fi
+              sleep 3
+            done
+          done
           curl --fail --silent http://localhost:5000/api/books | grep -q "DevOps for Beginners"
           curl --fail --silent http://localhost:8080/ > /dev/null
           curl --fail --silent http://localhost:8080/api/catalog/books | grep -q "Kubernetes Basics"
-          curl --fail --silent http://localhost:8081/actuator/health/readiness | grep -q '"status":"UP"'
           curl --fail --silent http://localhost:8081/api/catalog/books | grep -q 'Kubernetes Basics'
           curl --fail --silent http://localhost:8082/api/orders | grep -q 'CREATED'
           curl --fail --silent http://localhost:8083/api/inventory | grep -q 'availableQuantity'
