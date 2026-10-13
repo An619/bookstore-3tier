@@ -17,11 +17,13 @@ pipeline {
         string(name: 'ECR_REGISTRY', defaultValue: '', description: 'ECR registry host, for example account-id.dkr.ecr.ap-south-1.amazonaws.com.')
         string(name: 'ECR_BACKEND_REPOSITORY', defaultValue: 'bookstore-lab/backend', description: 'Backend ECR repository name created by Terraform.')
         string(name: 'ECR_FRONTEND_REPOSITORY', defaultValue: 'bookstore-lab/frontend', description: 'Frontend ECR repository name created by Terraform.')
+        string(name: 'ECR_CATALOG_REPOSITORY', defaultValue: 'bookstore-lab/catalog-service', description: 'Java catalog microservice ECR repository name created by Terraform.')
     }
 
     environment {
         BACKEND_IMAGE = 'bookstore-backend'
         FRONTEND_IMAGE = 'bookstore-frontend'
+        CATALOG_IMAGE = 'bookstore-catalog-service'
         IMAGE_TAG = ''
     }
 
@@ -41,6 +43,15 @@ pipeline {
                     sh 'node --version'
                     sh 'npm ci'
                     sh 'npm test'
+                }
+            }
+        }
+
+        stage('Maven catalog service validation') {
+            steps {
+                dir('services/catalog-service') {
+                    sh 'java -version'
+                    sh 'mvn -B -ntp verify'
                 }
             }
         }
@@ -76,6 +87,7 @@ pipeline {
             steps {
                 sh 'docker build -t $BACKEND_IMAGE:$IMAGE_TAG ./backend'
                 sh 'docker build -t $FRONTEND_IMAGE:$IMAGE_TAG ./frontend'
+                sh 'docker build -t $CATALOG_IMAGE:$IMAGE_TAG ./services/catalog-service'
             }
         }
 
@@ -89,6 +101,7 @@ pipeline {
                     command -v trivy
                     trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$BACKEND_IMAGE:$IMAGE_TAG"
                     trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$FRONTEND_IMAGE:$IMAGE_TAG"
+                    trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$CATALOG_IMAGE:$IMAGE_TAG"
                 '''
             }
         }
@@ -101,6 +114,9 @@ pipeline {
                     helm lint ./helm/bookstore
                     helm template bookstore ./helm/bookstore --namespace bookstore > /tmp/bookstore-rendered.yaml
                     test -s /tmp/bookstore-rendered.yaml
+                    helm lint ./helm/catalog-service
+                    helm template catalog-service ./helm/catalog-service --namespace bookstore > /tmp/catalog-rendered.yaml
+                    test -s /tmp/catalog-rendered.yaml
                 '''
             }
         }
@@ -122,6 +138,13 @@ pipeline {
                     curl --fail --silent http://localhost:5000/api/books | grep -q "DevOps for Beginners"
                     curl --fail --silent http://localhost:8080/ > /dev/null
                     curl --fail --silent http://localhost:8080/api/books | grep -q "Kubernetes Basics"
+                    attempt=0
+                    until curl --fail --silent http://localhost:8081/actuator/health/readiness | grep -q '"status":"UP"'; do
+                      attempt=$((attempt + 1))
+                      if [ "$attempt" -ge 20 ]; then docker compose logs; exit 1; fi
+                      sleep 3
+                    done
+                    curl --fail --silent http://localhost:8081/api/catalog/books | grep -q "Kubernetes Basics"
                 '''
             }
             post {
@@ -148,12 +171,15 @@ pipeline {
                     aws sts get-caller-identity >/dev/null
                     BACKEND_REMOTE="$ECR_REGISTRY/$ECR_BACKEND_REPOSITORY:$IMAGE_TAG"
                     FRONTEND_REMOTE="$ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY:$IMAGE_TAG"
+                    CATALOG_REMOTE="$ECR_REGISTRY/$ECR_CATALOG_REPOSITORY:$IMAGE_TAG"
                     aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
                     trap 'docker logout "$ECR_REGISTRY" >/dev/null 2>&1 || true' EXIT
                     docker tag "$BACKEND_IMAGE:$IMAGE_TAG" "$BACKEND_REMOTE"
                     docker tag "$FRONTEND_IMAGE:$IMAGE_TAG" "$FRONTEND_REMOTE"
+                    docker tag "$CATALOG_IMAGE:$IMAGE_TAG" "$CATALOG_REMOTE"
                     docker push "$BACKEND_REMOTE"
                     docker push "$FRONTEND_REMOTE"
+                    docker push "$CATALOG_REMOTE"
                 '''
             }
         }
@@ -171,12 +197,15 @@ pipeline {
                         set -eu
                         BACKEND_REMOTE="docker.io/$DOCKERHUB_USERNAME/bookstore-backend:$IMAGE_TAG"
                         FRONTEND_REMOTE="docker.io/$DOCKERHUB_USERNAME/bookstore-frontend:$IMAGE_TAG"
+                        CATALOG_REMOTE="docker.io/$DOCKERHUB_USERNAME/bookstore-catalog-service:$IMAGE_TAG"
                         echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin
                         trap 'docker logout >/dev/null 2>&1 || true' EXIT
                         docker tag "$BACKEND_IMAGE:$IMAGE_TAG" "$BACKEND_REMOTE"
                         docker tag "$FRONTEND_IMAGE:$IMAGE_TAG" "$FRONTEND_REMOTE"
+                        docker tag "$CATALOG_IMAGE:$IMAGE_TAG" "$CATALOG_REMOTE"
                         docker push "$BACKEND_REMOTE"
                         docker push "$FRONTEND_REMOTE"
+                        docker push "$CATALOG_REMOTE"
                     '''
                 }
             }
@@ -187,6 +216,7 @@ pipeline {
         always {
             sh 'docker image ls "$BACKEND_IMAGE" --format "{{.Repository}}:{{.Tag}}" || true'
             sh 'docker image ls "$FRONTEND_IMAGE" --format "{{.Repository}}:{{.Tag}}" || true'
+            sh 'docker image ls "$CATALOG_IMAGE" --format "{{.Repository}}:{{.Tag}}" || true'
             deleteDir()
         }
         success {
