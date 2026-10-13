@@ -6,7 +6,6 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Column;
-import jakarta.persistence.Column;
 
 @Entity
 @Table(name = "inventory_items")
@@ -26,4 +25,5 @@ public class InventoryItem {
     public Long getId() { return id; }
     public Long getBookId() { return bookId; }
     public Integer getAvailableQuantity() { return availableQuantity; }
+    public void setAvailableQuantity(Integer availableQuantity) { this.availableQuantity = availableQuantity; }
 }
