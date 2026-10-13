@@ -61,6 +61,22 @@ helm upgrade --install catalog-service ./helm/catalog-service -n bookstore \
   --set image.repository='<your-registry>/bookstore-catalog-service' \
   --set image.tag='<immutable-commit-sha>'
 kubectl -n bookstore get pods,svc,pvc
+
+kubectl -n bookstore create secret generic orders-db-secret \
+  --from-literal=username=serviceuser \
+  --from-literal=password='<choose-a-different-strong-password>'
+helm upgrade --install orders-service ./helm/orders-service -n bookstore \
+  --set image.repository='<your-registry>/bookstore-orders-service' \
+  --set image.tag='<immutable-commit-sha>'
+
+kubectl -n bookstore create secret generic inventory-db-secret \
+  --from-literal=username=serviceuser \
+  --from-literal=password='<choose-another-strong-password>'
+helm upgrade --install inventory-service ./helm/inventory-service -n bookstore \
+  --set image.repository='<your-registry>/bookstore-inventory-service' \
+  --set image.tag='<immutable-commit-sha>'
+
+kubectl -n bookstore get pods,svc,pvc
 ```
 
 Use a unique secret password in real environments. The in-chart PostgreSQL workload is for learning; production should use a managed database, backups, encryption, restore tests, and a secret manager.
