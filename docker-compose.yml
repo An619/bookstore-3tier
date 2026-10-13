@@ -166,6 +166,10 @@ services:
     depends_on:
       catalog-service:
         condition: service_healthy
+      orders-service:
+        condition: service_healthy
+      inventory-service:
+        condition: service_healthy
     networks: [bookstore-net]
     restart: unless-stopped
 
