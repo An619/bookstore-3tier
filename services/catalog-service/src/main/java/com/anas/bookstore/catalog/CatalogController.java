@@ -18,7 +18,7 @@ public class CatalogController {
 
     @GetMapping
     public List<CatalogBook> listBooks() {
-        return repository.findAll();
+        return repository.findAllByOrderByIdAsc();
     }
 
     @GetMapping("/{id}")
