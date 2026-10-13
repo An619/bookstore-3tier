@@ -51,7 +51,14 @@ pipeline {
             steps {
                 dir('services/catalog-service') {
                     sh 'java -version'
-                    sh 'mvn -B -ntp verify'
+                    sh '''
+                        for attempt in 1 2 3; do
+                          mvn -B -ntp verify && exit 0
+                          echo "Maven attempt $attempt failed; retrying"
+                          sleep $((attempt * 5))
+                        done
+                        exit 1
+                    '''
                 }
             }
         }
