@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bookstore-catalog-service
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/An619/bookstore-3tier.git
+    targetRevision: main
+    path: helm/catalog-service
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bookstore
+  # Manual sync is intentional until the target registry/image tag is configured for the cluster.
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
