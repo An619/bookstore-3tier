@@ -54,6 +54,14 @@ jobs:
           done
           exit 1
 
+      - name: Validate orders microservice
+        working-directory: services/orders-service
+        run: mvn -B -ntp verify
+
+      - name: Validate inventory microservice
+        working-directory: services/inventory-service
+        run: mvn -B -ntp verify
+
       - name: Validate frontend
         working-directory: frontend
         run: |
@@ -74,6 +82,12 @@ jobs:
           helm lint ./helm/catalog-service
           helm template catalog-service ./helm/catalog-service --namespace bookstore > /tmp/catalog-rendered.yaml
           test -s /tmp/catalog-rendered.yaml
+          helm lint ./helm/orders-service
+          helm template orders-service ./helm/orders-service --namespace bookstore > /tmp/orders-rendered.yaml
+          test -s /tmp/orders-rendered.yaml
+          helm lint ./helm/inventory-service
+          helm template inventory-service ./helm/inventory-service --namespace bookstore > /tmp/inventory-rendered.yaml
+          test -s /tmp/inventory-rendered.yaml
 
       - name: Build and start three-tier stack
         run: docker compose up --build -d
@@ -96,6 +110,10 @@ jobs:
           curl --fail --silent http://localhost:8080/api/catalog/books | grep -q "Kubernetes Basics"
           curl --fail --silent http://localhost:8081/actuator/health/readiness | grep -q '"status":"UP"'
           curl --fail --silent http://localhost:8081/api/catalog/books | grep -q 'Kubernetes Basics'
+          curl --fail --silent http://localhost:8082/api/orders | grep -q 'CREATED'
+          curl --fail --silent http://localhost:8083/api/inventory | grep -q 'availableQuantity'
+          curl --fail --silent http://localhost:8080/api/orders | grep -q 'CREATED'
+          curl --fail --silent http://localhost:8080/api/inventory | grep -q 'availableQuantity'
 
       - name: Print diagnostic logs on failure
         if: failure()
