@@ -1,0 +1,17 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bookstore-orders-service
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/An619/bookstore-3tier.git
+    targetRevision: main
+    path: helm/orders-service
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bookstore
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
