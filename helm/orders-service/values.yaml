@@ -1,0 +1,14 @@
+replicaCount: 1
+image:
+  repository: bookstore-orders-service
+  tag: local
+  pullPolicy: IfNotPresent
+service:
+  port: 8082
+database:
+  host: orders-service-postgres
+  name: ordersdb
+  username: serviceuser
+  secretName: orders-db-secret
+  storage: 5Gi
+  image: postgres:16-alpine
