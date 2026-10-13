@@ -59,29 +59,38 @@ function App() {
 
       await requestJson(`/api/inventory/${book.id}/reserve?quantity=1`, { method: 'POST' });
       stockReserved = true;
-      await requestJson('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerName: 'Portfolio Demo Customer',
-          bookId: book.id,
-          quantity: 1,
-        }),
-      });
+      try {
+        await requestJson('/api/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customerName: 'Portfolio Demo Customer',
+            bookId: book.id,
+            quantity: 1,
+          }),
+        });
+      } catch (orderError) {
+        try {
+          await requestJson(`/api/inventory/${book.id}/release?quantity=1`, { method: 'POST' });
+          stockReserved = false;
+        } catch {
+          throw new Error(`${orderError.message} Inventory compensation also failed; check inventory before retrying.`);
+        }
+        throw orderError;
+      }
       setNotice(`Demo order created for “${book.title}”. Inventory was reserved.`);
-      await loadData();
+      loadData().catch(() => setError('Order was created, but the page could not refresh. Reload to see the latest stock and orders.'));
     } catch (err) {
       if (stockReserved) {
         try {
           await requestJson(`/api/inventory/${book.id}/release?quantity=1`, { method: 'POST' });
         } catch {
-          setError(`${err.message} Inventory compensation also failed; check the inventory service before retrying.`);
+          setError(`${err.message} Inventory compensation also failed; check inventory before retrying.`);
           setBusyBookId(null);
           return;
         }
       }
       setError(err.message);
-      loadData().catch(() => {});
     } finally {
       setBusyBookId(null);
     }
