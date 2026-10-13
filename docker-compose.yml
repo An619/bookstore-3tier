@@ -58,6 +58,84 @@ services:
     networks: [bookstore-net]
     restart: unless-stopped
 
+  orders-database:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ordersdb
+      POSTGRES_USER: serviceuser
+      POSTGRES_PASSWORD: ${ORDERS_DB_PASSWORD:-local-orders-change-me}
+    volumes:
+      - orders_data:/var/lib/postgresql/data
+      - ./database/orders-service-init.sql:/docker-entrypoint-initdb.d/01-orders-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U serviceuser -d ordersdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    networks: [bookstore-net]
+    restart: unless-stopped
+
+  inventory-database:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: inventorydb
+      POSTGRES_USER: serviceuser
+      POSTGRES_PASSWORD: ${INVENTORY_DB_PASSWORD:-local-inventory-change-me}
+    volumes:
+      - inventory_data:/var/lib/postgresql/data
+      - ./database/inventory-service-init.sql:/docker-entrypoint-initdb.d/01-inventory-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U serviceuser -d inventorydb"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    networks: [bookstore-net]
+    restart: unless-stopped
+
+  orders-service:
+    build: ./services/orders-service
+    image: bookstore-orders-service:local
+    environment:
+      SERVER_PORT: "8082"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://orders-database:5432/ordersdb
+      SPRING_DATASOURCE_USERNAME: serviceuser
+      SPRING_DATASOURCE_PASSWORD: ${ORDERS_DB_PASSWORD:-local-orders-change-me}
+    ports:
+      - "8082:8082"
+    depends_on:
+      orders-database:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8082/actuator/health/readiness >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 25s
+    networks: [bookstore-net]
+    restart: unless-stopped
+
+  inventory-service:
+    build: ./services/inventory-service
+    image: bookstore-inventory-service:local
+    environment:
+      SERVER_PORT: "8083"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://inventory-database:5432/inventorydb
+      SPRING_DATASOURCE_USERNAME: serviceuser
+      SPRING_DATASOURCE_PASSWORD: ${INVENTORY_DB_PASSWORD:-local-inventory-change-me}
+    ports:
+      - "8083:8083"
+    depends_on:
+      inventory-database:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8083/actuator/health/readiness >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 25s
+    networks: [bookstore-net]
+    restart: unless-stopped
+
   catalog-service:
     build: ./services/catalog-service
     image: bookstore-catalog-service:local
@@ -98,3 +176,5 @@ networks:
 volumes:
   postgres_data:
   catalog_data:
+  orders_data:
+  inventory_data:
