@@ -45,12 +45,12 @@ spec:
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.database.secretName }}
+                  name: {{ .Values.database.existingSecret | default (printf "%s-db-secret" .Release.Name) }}
                   key: username
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.database.secretName }}
+                  name: {{ .Values.database.existingSecret | default (printf "%s-db-secret" .Release.Name) }}
                   key: password
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata

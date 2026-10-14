@@ -36,17 +36,25 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.database.existingSecret | default (printf "%s-db-secret" .Release.Name) }}
                   key: password
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 30
+            timeoutSeconds: 3
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
               port: http
-            initialDelaySeconds: 10
+            initialDelaySeconds: 0
             periodSeconds: 5
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
               port: http
-            initialDelaySeconds: 25
+            initialDelaySeconds: 0
             periodSeconds: 10
           resources:
             requests: {cpu: 100m, memory: 256Mi}
