@@ -9,30 +9,46 @@ import org.springframework.web.server.ResponseStatusException;
 @RequestMapping("/api/inventory")
 public class InventoryController {
     private final InventoryRepository repository;
-    public InventoryController(InventoryRepository repository) { this.repository = repository; }
+
+    public InventoryController(InventoryRepository repository) {
+        this.repository = repository;
+    }
 
     @GetMapping
-    public List<InventoryItem> list() { return repository.findAllByOrderByBookIdAsc(); }
+    public List<InventoryItem> list() {
+        return repository.findAllByOrderByBookIdAsc();
+    }
 
     @GetMapping("/{bookId}")
     public InventoryItem get(@PathVariable long bookId) {
-        return repository.findByBookId(bookId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        return repository.findByBookId(bookId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "inventory item not found"));
     }
 
     @PostMapping("/{bookId}/reserve")
     public InventoryItem reserve(@PathVariable long bookId, @RequestParam(defaultValue = "1") int quantity) {
-        if (quantity < 1) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "quantity must be positive");
-        InventoryItem item = get(bookId);
-        if (item.getAvailableQuantity() < quantity) throw new ResponseStatusException(HttpStatus.CONFLICT, "insufficient stock");
-        item.setAvailableQuantity(item.getAvailableQuantity() - quantity);
-        return repository.save(item);
+        if (quantity < 1) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "quantity must be positive");
+        }
+
+        int updated = repository.reserveIfAvailable(bookId, quantity);
+        if (updated == 0) {
+            if (repository.findByBookId(bookId).isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "inventory item not found");
+            }
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "insufficient stock");
+        }
+        return get(bookId);
     }
 
     @PostMapping("/{bookId}/release")
     public InventoryItem release(@PathVariable long bookId, @RequestParam(defaultValue = "1") int quantity) {
-        if (quantity < 1) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "quantity must be positive");
-        InventoryItem item = get(bookId);
-        item.setAvailableQuantity(item.getAvailableQuantity() + quantity);
-        return repository.save(item);
+        if (quantity < 1) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "quantity must be positive");
+        }
+        if (repository.releaseStock(bookId, quantity) == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "inventory item not found");
+        }
+        return get(bookId);
     }
 }
