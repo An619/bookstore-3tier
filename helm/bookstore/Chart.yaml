@@ -1,6 +1,6 @@
 apiVersion: v2
 name: bookstore
-description: Three-tier Bookstore application for DevOps practice
+description: DEPRECATED legacy monolith compatibility chart; use the catalog-service, orders-service and inventory-service charts
 type: application
 version: 0.1.0
 appVersion: "1.0.0"

@@ -31,7 +31,7 @@ jobs:
             backend/package-lock.json
             frontend/package-lock.json
 
-      - name: Validate backend
+      - name: Validate retained legacy Node API tests (not deployed)
         working-directory: backend
         run: |
           npm ci
@@ -89,22 +89,12 @@ jobs:
           helm template inventory-service ./helm/inventory-service --namespace bookstore > /tmp/inventory-rendered.yaml
           test -s /tmp/inventory-rendered.yaml
 
-      - name: Build and start three-tier stack
+      - name: Build and start microservices stack
         run: docker compose up --build -d
 
       - name: Smoke test API and frontend proxy
         run: |
           set -eu
-          for attempt in $(seq 1 30); do
-            if curl --fail --silent http://localhost:5000/api/ready; then
-              break
-            fi
-            if [ "$attempt" -eq 30 ]; then
-              docker compose logs
-              exit 1
-            fi
-            sleep 3
-          done
           for service_port in 8081 8082 8083; do
             for attempt in $(seq 1 40); do
               if curl --fail --silent "http://localhost:${service_port}/actuator/health/readiness" | grep -q '"status":"UP"'; then
@@ -117,7 +107,6 @@ jobs:
               sleep 3
             done
           done
-          curl --fail --silent http://localhost:5000/api/books | grep -q "DevOps for Beginners"
           curl --fail --silent http://localhost:8080/ > /dev/null
           curl --fail --silent http://localhost:8080/api/catalog/books | grep -q "Kubernetes Basics"
           curl --fail --silent http://localhost:8081/api/catalog/books | grep -q 'Kubernetes Basics'
