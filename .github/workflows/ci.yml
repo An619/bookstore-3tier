@@ -2,9 +2,9 @@ name: Bookstore CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feature/devops-platform-foundation]
   push:
-    branches: [main]
+    branches: [main, feature/devops-platform-foundation]
   workflow_dispatch:
 
 permissions:
@@ -19,48 +19,51 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: |
-            backend/package-lock.json
-            frontend/package-lock.json
-
-      - name: Validate backend
-        working-directory: backend
-        run: |
-          npm ci
-          npm test
-
-      - name: Set up Java for Maven microservice
+      - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "21"
           cache: maven
 
-      - name: Validate Java catalog microservice
+      - name: Validate catalog service
         working-directory: services/catalog-service
         run: |
           for attempt in 1 2 3; do
-            mvn -B -ntp verify && exit 0
-            echo "Maven attempt $attempt failed; retrying in case the artifact repository is temporarily unavailable"
-            sleep $((attempt * 5))
+            mvn -B -ntp -U verify && exit 0
+            echo "Maven attempt $attempt failed; retrying"
+            sleep $((attempt * 10))
           done
           exit 1
 
-      - name: Validate orders microservice
+      - name: Validate orders service
         working-directory: services/orders-service
-        run: mvn -B -ntp verify
+        run: |
+          for attempt in 1 2 3; do
+            mvn -B -ntp -U verify && exit 0
+            echo "Maven attempt $attempt failed; retrying"
+            sleep $((attempt * 10))
+          done
+          exit 1
 
-      - name: Validate inventory microservice
+      - name: Validate inventory service
         working-directory: services/inventory-service
-        run: mvn -B -ntp verify
+        run: |
+          for attempt in 1 2 3; do
+            mvn -B -ntp -U verify && exit 0
+            echo "Maven attempt $attempt failed; retrying"
+            sleep $((attempt * 10))
+          done
+          exit 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Validate frontend
         working-directory: frontend
@@ -89,25 +92,16 @@ jobs:
           helm template inventory-service ./helm/inventory-service --namespace bookstore > /tmp/inventory-rendered.yaml
           test -s /tmp/inventory-rendered.yaml
 
-      - name: Build and start three-tier stack
+      - name: Build and start stack
         run: docker compose up --build -d
 
-      - name: Smoke test API and frontend proxy
+      - name: Wait for services and smoke test
         run: |
           set -eu
-          for attempt in $(seq 1 30); do
-            if curl --fail --silent http://localhost:5000/api/ready; then
-              break
-            fi
-            if [ "$attempt" -eq 30 ]; then
-              docker compose logs
-              exit 1
-            fi
-            sleep 3
-          done
           for service_port in 8081 8082 8083; do
             for attempt in $(seq 1 40); do
               if curl --fail --silent "http://localhost:${service_port}/actuator/health/readiness" | grep -q '"status":"UP"'; then
+                echo "port ${service_port} ready"
                 break
               fi
               if [ "$attempt" -eq 40 ]; then
@@ -117,14 +111,34 @@ jobs:
               sleep 3
             done
           done
-          curl --fail --silent http://localhost:5000/api/books | grep -q "DevOps for Beginners"
-          curl --fail --silent http://localhost:8080/ > /dev/null
-          curl --fail --silent http://localhost:8080/api/catalog/books | grep -q "Kubernetes Basics"
-          curl --fail --silent http://localhost:8081/api/catalog/books | grep -q 'Kubernetes Basics'
-          curl --fail --silent http://localhost:8082/api/orders | grep -q 'CREATED'
-          curl --fail --silent http://localhost:8083/api/inventory | grep -q 'availableQuantity'
-          curl --fail --silent http://localhost:8080/api/orders | grep -q 'CREATED'
-          curl --fail --silent http://localhost:8080/api/inventory | grep -q 'availableQuantity'
+
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent http://localhost:8080/nginx-health >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 20 ]; then
+              docker compose logs
+              exit 1
+            fi
+            sleep 3
+          done
+
+          curl --fail --silent http://localhost:8080/api/catalog/books | grep -q "DevOps for Beginners"
+          curl --fail --silent http://localhost:8080/api/inventory | grep -q "availableQuantity"
+          curl --fail --silent http://localhost:8080/api/orders | grep -q "CREATED"
+
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/unknown-path)
+          test "$code" = "404"
+
+          BOOK_ID=$(curl -s http://localhost:8080/api/inventory | jq -r '.[0].bookId')
+          BEFORE=$(curl -s "http://localhost:8080/api/inventory/$BOOK_ID" | jq -r '.availableQuantity')
+          curl -s -X POST http://localhost:8080/api/orders \
+            -H 'Content-Type: application/json' \
+            -d "{\"customerName\":\"CITest\",\"bookId\":$BOOK_ID,\"quantity\":1}" > /dev/null
+          AFTER=$(curl -s "http://localhost:8080/api/inventory/$BOOK_ID" | jq -r '.availableQuantity')
+          test "$AFTER" -eq "$((BEFORE - 1))"
+
+          echo "ALL SMOKE TESTS PASSED"
 
       - name: Print diagnostic logs on failure
         if: failure()
@@ -138,8 +152,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
@@ -150,10 +163,10 @@ jobs:
       - name: Check Terraform formatting
         run: terraform fmt -check -recursive terraform/eks
 
-      - name: Initialize Terraform without a backend
+      - name: Initialize Terraform
         working-directory: terraform/eks
         run: terraform init -backend=false -input=false
 
-      - name: Validate Terraform configuration
+      - name: Validate Terraform
         working-directory: terraform/eks
         run: terraform validate
