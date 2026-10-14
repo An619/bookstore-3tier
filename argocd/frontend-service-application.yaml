@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: frontend-service
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/An619/bookstore-3tier.git
+    targetRevision: main
+    path: helm/frontend-service
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bookstore
+  # Manual sync keeps image tags, routing and cluster credentials under review.
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
