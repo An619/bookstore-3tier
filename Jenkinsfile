@@ -121,14 +121,14 @@ pipeline {
                     aws sts get-caller-identity >/dev/null
                     aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
                     trap 'docker logout "$ECR_REGISTRY" >/dev/null 2>&1 || true' EXIT
-                    for pair in "FRONTEND:$ECR_FRONTEND_REPOSITORY" "CATALOG:$ECR_CATALOG_REPOSITORY" "ORDERS:$ECR_ORDERS_REPOSITORY" "INVENTORY:$ECR_INVENTORY_REPOSITORY"; do
-                      image_var="${pair%%:*}"
-                      repository="${pair#*:}"
-                      eval "local_image=\$$image_var"
-                      remote="$ECR_REGISTRY/$repository:$IMAGE_TAG"
-                      docker tag "$local_image:$IMAGE_TAG" "$remote"
-                      docker push "$remote"
-                    done
+                    docker tag "$FRONTEND_IMAGE:$IMAGE_TAG" "$ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY:$IMAGE_TAG"
+                    docker tag "$CATALOG_IMAGE:$IMAGE_TAG" "$ECR_REGISTRY/$ECR_CATALOG_REPOSITORY:$IMAGE_TAG"
+                    docker tag "$ORDERS_IMAGE:$IMAGE_TAG" "$ECR_REGISTRY/$ECR_ORDERS_REPOSITORY:$IMAGE_TAG"
+                    docker tag "$INVENTORY_IMAGE:$IMAGE_TAG" "$ECR_REGISTRY/$ECR_INVENTORY_REPOSITORY:$IMAGE_TAG"
+                    docker push "$ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY:$IMAGE_TAG"
+                    docker push "$ECR_REGISTRY/$ECR_CATALOG_REPOSITORY:$IMAGE_TAG"
+                    docker push "$ECR_REGISTRY/$ECR_ORDERS_REPOSITORY:$IMAGE_TAG"
+                    docker push "$ECR_REGISTRY/$ECR_INVENTORY_REPOSITORY:$IMAGE_TAG"
                 '''
             }
         }
