@@ -77,7 +77,7 @@ pipeline {
                 sh '''
                     set -eu
                     command -v helm
-                    for chart in catalog-service orders-service inventory-service; do
+                    for chart in frontend-service catalog-service orders-service inventory-service; do
                       helm lint "./helm/$chart"
                       helm template "$chart" "./helm/$chart" --namespace bookstore > "/tmp/$chart-rendered.yaml"
                       test -s "/tmp/$chart-rendered.yaml"
