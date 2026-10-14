@@ -39,7 +39,8 @@ docker-compose.yml  Local stack with isolated database per service
 Jenkinsfile       CI pipeline with Maven, SonarQube and opt-in integrations
 helm/              Kubernetes Helm charts for all services
 .github/workflows/ci.yml  Pull request CI
-helm/bookstore/   Kubernetes Helm chart
+helm/bookstore/   Deprecated legacy chart retained for migration reference
+helm/frontend/    Kubernetes Helm chart for the active React/Nginx frontend
 argocd/           GitOps Application starter
 terraform/eks/    AWS VPC, EKS and ECR starter
 monitoring/       Prometheus alert rules and Grafana guide
@@ -78,11 +79,11 @@ Run tests locally:
 cd frontend && npm ci && npm run lint && npm run build
 cd ..
 for service in catalog-service orders-service inventory-service; do (cd services/$service && mvn -B -ntp verify); done
-helm lint ./helm/bookstore
+helm lint ./helm/frontend
 helm lint ./helm/catalog-service
 helm lint ./helm/orders-service
 helm lint ./helm/inventory-service
-helm template bookstore ./helm/bookstore --namespace bookstore
+helm template frontend ./helm/frontend --namespace bookstore
 helm template catalog-service ./helm/catalog-service --namespace bookstore
 helm template orders-service ./helm/orders-service --namespace bookstore
 helm template inventory-service ./helm/inventory-service --namespace bookstore
@@ -94,8 +95,8 @@ The Compose database password and Helm default password are for disposable local
 
 ## Recommended learning path
 
-1. Run the app locally and understand each tier and health/readiness check.
-2. Review GitHub Actions and fix any failed CI stages.
+1. Run the microservices-only app locally and understand each service and health/readiness check.
+2. Review GitHub Actions and fix any failed CI stages. The old Node.js backend and legacy Helm chart are not part of the active runtime.
 3. Configure Jenkins Multibranch Pipeline and optional SonarQube/Trivy integrations.
 4. Validate the Java microservices with Maven and SonarQube, then build/push immutable images to a registry.
 5. Deploy the Helm chart to a disposable Kubernetes cluster and practice troubleshooting.
