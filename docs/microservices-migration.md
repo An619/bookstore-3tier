@@ -1,95 +1,59 @@
-# Microservices migration status
+# Microservices cutover
 
-The repository now has three separately deployable Java 21/Spring Boot services—Catalog, Orders and Inventory—each with its own PostgreSQL database. Nginx routes all three domain APIs while the legacy Node.js API remains temporarily for routes not yet migrated.
+The application runtime has been cut over from the legacy Node.js monolith to three independently deployable Java 21 / Spring Boot services. The old Node backend, its single shared database initialization script, and the legacy monolith Helm/Argo CD deployment entry have been removed from the repository. Docker Compose and CI now exercise only the microservices runtime.
+
+## Runtime architecture
+
+Browser -> React/Vite -> Nginx API routing -> Catalog / Orders / Inventory services -> service-owned PostgreSQL databases.
+
+- **Catalog Service** owns book/catalog records and its own PostgreSQL database.
+- **Orders Service** owns order records and its own PostgreSQL database.
+- **Inventory Service** owns stock records and its own PostgreSQL database.
+- **Frontend** calls the domain APIs through Nginx; it does not call a legacy Node.js API.
+- **Persistence isolation:** each service has a separate PostgreSQL database workload and Compose volume.
 
 ## Service APIs
 
 - Catalog: `GET /api/catalog/books`, `GET /api/catalog/books/{id}`
 - Orders: `GET /api/orders`, `GET /api/orders/{id}`, `POST /api/orders` with `customerName`, `bookId`, and `quantity`
 - Inventory: `GET /api/inventory`, `GET /api/inventory/{bookId}`, `POST /api/inventory/{bookId}/reserve?quantity=1`, `POST /api/inventory/{bookId}/release?quantity=1`
+- Health: each Java service exposes Spring Boot Actuator health, liveness and readiness endpoints.
 
-The Orders service validates basic order input. Inventory rejects invalid quantities and insufficient stock. These are learning-grade APIs; order creation does not yet orchestrate an atomic stock reservation or payment.
-
-## Catalog Service API
-
-- `GET /api/catalog/books`
-- `GET /api/catalog/books/{id}`
-- `GET /actuator/health`
-- `GET /actuator/health/liveness`
-- `GET /actuator/health/readiness` (includes database readiness)
-
-Each service uses Spring Data JPA and PostgreSQL. SQL initialization files are under `database/`; Docker Compose persists each service's data in its own named volume.
+The frontend demo currently reserves stock and then creates an order; if order creation fails it attempts a compensating stock release. This is a demonstration flow, not a durable distributed transaction. Inventory reservation still needs atomic/transactional update semantics before handling concurrent production traffic.
 
 ## Run and verify locally
 
-From the repository root:
+Requirements: Docker Engine with Compose v2.
 
 ```bash
 docker compose up --build -d
 docker compose ps
 curl -fsS http://localhost:8080/api/catalog/books
-curl -fsS http://localhost:8081/api/catalog/books
-curl -fsS http://localhost:8081/actuator/health/readiness
-curl -fsS http://localhost:8082/api/orders
-curl -fsS http://localhost:8083/api/inventory
 curl -fsS http://localhost:8080/api/orders
 curl -fsS http://localhost:8080/api/inventory
-docker compose logs -f orders-service inventory-service catalog-service
+curl -fsS http://localhost:8081/actuator/health/readiness
+curl -fsS http://localhost:8082/actuator/health/readiness
+curl -fsS http://localhost:8083/actuator/health/readiness
+docker compose logs -f catalog-service orders-service inventory-service
 ```
 
-Open http://localhost:8080 to confirm the UI gets books from the Catalog Service. The legacy Node.js API remains available on port 5000 during the migration.
-
-Stop containers with `docker compose down`. This preserves local data. To delete both local database volumes and all their data, run `docker compose down -v` (destructive).
-
-For Maven tests, use Java 21 and Maven 3.9+:
-
-```bash
-cd services/catalog-service
-mvn -B -ntp verify
-```
+Open http://localhost:8080. Stop with `docker compose down`; this preserves database volumes. `docker compose down -v` deletes local database data.
 
 ## Kubernetes deployment
 
-Each service has a Helm chart with a Deployment/Service and a service-owned PostgreSQL StatefulSet/PVC. Create the matching Secret for each chart before installation. Create the database credential Secret before installing the chart:
+The frontend gateway and each domain service have dedicated Helm charts and Argo CD Applications. The charts include Deployment/Service and a service-owned PostgreSQL StatefulSet/PVC for learning. Create each database Secret before installing its chart, set immutable image repository/tag values, and review rendered manifests before syncing.
 
 ```bash
 kubectl create namespace bookstore
-kubectl -n bookstore create secret generic catalog-db-secret \
-  --from-literal=username=cataloguser \
-  --from-literal=password='<choose-a-unique-strong-password>'
-helm upgrade --install catalog-service ./helm/catalog-service -n bookstore \
-  --set image.repository='<your-registry>/bookstore-catalog-service' \
-  --set image.tag='<immutable-commit-sha>'
-kubectl -n bookstore get pods,svc,pvc
-
-kubectl -n bookstore create secret generic orders-db-secret \
-  --from-literal=username=serviceuser \
-  --from-literal=password='<choose-a-different-strong-password>'
-helm upgrade --install orders-service ./helm/orders-service -n bookstore \
-  --set image.repository='<your-registry>/bookstore-orders-service' \
-  --set image.tag='<immutable-commit-sha>'
-
-kubectl -n bookstore create secret generic inventory-db-secret \
-  --from-literal=username=serviceuser \
-  --from-literal=password='<choose-another-strong-password>'
-helm upgrade --install inventory-service ./helm/inventory-service -n bookstore \
-  --set image.repository='<your-registry>/bookstore-inventory-service' \
-  --set image.tag='<immutable-commit-sha>'
-
-kubectl -n bookstore get pods,svc,pvc
+for chart in frontend-service catalog-service orders-service inventory-service; do helm lint ./helm/$chart; done
 ```
 
-Use a unique secret password in real environments. The in-chart PostgreSQL workload is for learning; production should use a managed database, backups, encryption, restore tests, and a secret manager.
+Use managed databases and a secret manager for production. Do not reuse learning credentials.
 
-## DevOps tools
+## CI/CD
 
-- **Maven** compiles/tests the Java service and packages the executable JAR.
-- **Jenkins** runs Node and Maven validation, builds images, performs Compose smoke tests, validates Helm charts, and can optionally publish immutable commit-SHA tags.
-- **SonarQube** analyzes Java, Node and frontend source. Configure Jenkins credential `sonarqube-token` and `SONAR_HOST_URL`; install SonarScanner on the agent.
-- **Docker** packages the service in a non-root runtime image.
-- **Kubernetes/Helm** deploys the catalog independently from the remaining legacy API.
-- **Argo CD** watches the catalog Helm chart from Git; its Application uses manual sync intentionally.
+GitHub Actions validates Maven tests for all services, frontend lint/build, Docker Compose API smoke tests, Helm lint/render and Terraform validation. Jenkins runs equivalent validation and image builds; SonarQube, Trivy and registry publishing are opt-in and require a configured Jenkins agent and credentials.
 
-## Remaining migration work
+## Remaining production hardening
 
-This is a stronger staged microservices migration, but it is not production-complete. Catalog, Orders and Inventory are independently deployable and own separate databases. Order creation does not yet reserve stock transactionally; customer identity, payment/checkout, inter-service authentication, retries/idempotency, distributed tracing, contract testing and production database operations remain future work.
+The runtime cutover is complete at the application/deployment level, but this is not production-ready. Remaining work includes atomic inventory reservation, idempotency, durable order orchestration/outbox and reconciliation, authentication/authorization, API rate limits, service contract tests, distributed tracing, SLO-based alerting, managed PostgreSQL, backups/restore drills, and environment-specific image/secret configuration.

@@ -1,6 +1,6 @@
 # Terraform: AWS EKS lab
 
-This configuration provisions a VPC with public/private subnets, one NAT gateway, an EKS cluster with managed worker nodes, and two immutable ECR repositories with image scanning on push and an untagged-image lifecycle policy.
+This configuration provisions a VPC with public/private subnets, one NAT gateway, an EKS cluster with managed worker nodes, and immutable ECR repositories for the frontend and each microservice with image scanning on push and an untagged-image lifecycle policy.
 
 ## Prerequisites
 - Terraform 1.6+
@@ -36,7 +36,7 @@ aws eks update-kubeconfig --region ap-south-1 --name bookstore-lab-eks
 kubectl get nodes
 ```
 
-Use the actual outputs if you change the region/name inputs. Build and push images to the output ECR repositories, then configure Helm values with their full URLs and commit-SHA tags.
+Use the actual outputs if you change the region/name inputs. Build and push the frontend, catalog, orders and inventory images to the corresponding output ECR repositories, then configure Helm values with their full URLs and commit-SHA tags.
 
 ## Cleanup
 

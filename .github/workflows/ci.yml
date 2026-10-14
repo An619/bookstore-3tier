@@ -1,4 +1,4 @@
-name: Bookstore CI
+name: Bookstore Microservices CI
 
 on:
   pull_request:
@@ -17,42 +17,28 @@ concurrency:
 jobs:
   validate-and-smoke-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: Set up Node.js for frontend
         uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: |
-            backend/package-lock.json
-            frontend/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
-      - name: Validate backend
-        working-directory: backend
-        run: |
-          npm ci
-          npm test
-
-      - name: Set up Java for Maven microservice
+      - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "21"
           cache: maven
 
-      - name: Validate Java catalog microservice
+      - name: Validate catalog microservice
         working-directory: services/catalog-service
-        run: |
-          for attempt in 1 2 3; do
-            mvn -B -ntp verify && exit 0
-            echo "Maven attempt $attempt failed; retrying in case the artifact repository is temporarily unavailable"
-            sleep $((attempt * 5))
-          done
-          exit 1
+        run: mvn -B -ntp verify
 
       - name: Validate orders microservice
         working-directory: services/orders-service
@@ -74,57 +60,36 @@ jobs:
         with:
           version: v3.17.3
 
-      - name: Lint and render Helm charts
-        run: |
-          helm lint ./helm/bookstore
-          helm template bookstore ./helm/bookstore --namespace bookstore > /tmp/bookstore-rendered.yaml
-          test -s /tmp/bookstore-rendered.yaml
-          helm lint ./helm/catalog-service
-          helm template catalog-service ./helm/catalog-service --namespace bookstore > /tmp/catalog-rendered.yaml
-          test -s /tmp/catalog-rendered.yaml
-          helm lint ./helm/orders-service
-          helm template orders-service ./helm/orders-service --namespace bookstore > /tmp/orders-rendered.yaml
-          test -s /tmp/orders-rendered.yaml
-          helm lint ./helm/inventory-service
-          helm template inventory-service ./helm/inventory-service --namespace bookstore > /tmp/inventory-rendered.yaml
-          test -s /tmp/inventory-rendered.yaml
-
-      - name: Build and start three-tier stack
-        run: docker compose up --build -d
-
-      - name: Smoke test API and frontend proxy
+      - name: Lint and render microservice charts
         run: |
           set -eu
-          for attempt in $(seq 1 30); do
-            if curl --fail --silent http://localhost:5000/api/ready; then
-              break
-            fi
-            if [ "$attempt" -eq 30 ]; then
-              docker compose logs
-              exit 1
-            fi
-            sleep 3
+          for chart in frontend-service catalog-service orders-service inventory-service; do
+            helm lint "./helm/$chart"
+            helm template "$chart" "./helm/$chart" --namespace bookstore > "/tmp/$chart-rendered.yaml"
+            test -s "/tmp/$chart-rendered.yaml"
           done
+
+      - name: Build and start microservices stack
+        run: docker compose up --build -d
+
+      - name: Smoke test services and API gateway routes
+        run: |
+          set -eu
           for service_port in 8081 8082 8083; do
-            for attempt in $(seq 1 40); do
-              if curl --fail --silent "http://localhost:${service_port}/actuator/health/readiness" | grep -q '"status":"UP"'; then
-                break
-              fi
-              if [ "$attempt" -eq 40 ]; then
-                docker compose logs
-                exit 1
-              fi
+            attempt=0
+            until curl --fail --silent "http://localhost:${service_port}/actuator/health/readiness" | grep -q '"status":"UP"'; do
+              attempt=$((attempt + 1))
+              if [ "$attempt" -ge 40 ]; then docker compose logs; exit 1; fi
               sleep 3
             done
           done
-          curl --fail --silent http://localhost:5000/api/books | grep -q "DevOps for Beginners"
           curl --fail --silent http://localhost:8080/ > /dev/null
           curl --fail --silent http://localhost:8080/api/catalog/books | grep -q "Kubernetes Basics"
-          curl --fail --silent http://localhost:8081/api/catalog/books | grep -q 'Kubernetes Basics'
-          curl --fail --silent http://localhost:8082/api/orders | grep -q 'CREATED'
-          curl --fail --silent http://localhost:8083/api/inventory | grep -q 'availableQuantity'
-          curl --fail --silent http://localhost:8080/api/orders | grep -q 'CREATED'
-          curl --fail --silent http://localhost:8080/api/inventory | grep -q 'availableQuantity'
+          curl --fail --silent http://localhost:8081/api/catalog/books | grep -q "Kubernetes Basics"
+          curl --fail --silent http://localhost:8082/api/orders | grep -q "CREATED"
+          curl --fail --silent http://localhost:8083/api/inventory | grep -q "availableQuantity"
+          curl --fail --silent http://localhost:8080/api/orders | grep -q "CREATED"
+          curl --fail --silent http://localhost:8080/api/inventory | grep -q "availableQuantity"
 
       - name: Print diagnostic logs on failure
         if: failure()

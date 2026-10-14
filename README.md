@@ -1,120 +1,98 @@
-# Bookstore 3-Tier DevOps Platform
+# Bookstore Microservices DevOps Platform
 
-A hands-on DevOps portfolio lab around a three-tier application. The repository is designed to be practiced in Killercoda first and then moved to a local Kubernetes cluster or AWS EKS.
+A hands-on portfolio project built around independently deployable application services. Run it with Docker Compose first, then practice Kubernetes/Helm, Argo CD, CI/CD, monitoring and optional AWS EKS.
 
-## Application architecture
+## Architecture
 
-- **Presentation tier:** React + Vite served by unprivileged Nginx.
-- **Catalog domain:** Java 21 + Spring Boot Catalog Service with its own PostgreSQL database.
-- **Orders domain:** Java 21 + Spring Boot Orders Service with its own PostgreSQL database and order API.
-- **Inventory domain:** Java 21 + Spring Boot Inventory Service with its own PostgreSQL database, stock query, reserve and release endpoints.
-- **Legacy routes:** Node.js + Express API remains for business capabilities not yet migrated.
-- **Data tier:** PostgreSQL.
-- **Local runtime:** Docker Compose with health-gated dependencies and a persistent development database volume.
+- **Frontend:** React + Vite, served by unprivileged Nginx.
+- **Catalog Service:** Java 21 / Spring Boot; owns catalog data and its PostgreSQL database.
+- **Orders Service:** Java 21 / Spring Boot; owns order data and its PostgreSQL database.
+- **Inventory Service:** Java 21 / Spring Boot; owns stock data and its PostgreSQL database.
+- **API routing:** Nginx routes `/api/catalog`, `/api/orders` and `/api/inventory` directly to their service.
+- **Persistence:** separate PostgreSQL database/container and volume per service.
+- **No legacy Node.js backend participates in the application runtime.** The microservices are the source of truth for catalog, orders and inventory.
 
-## DevOps capabilities in this repository
+The frontend currently demonstrates the order flow by reserving inventory and then creating an order, with a best-effort compensating release if order creation fails. This is not a distributed transaction; production-grade orchestration and concurrency-safe inventory are still required.
 
-- GitHub Actions CI: backend unit tests, frontend lint/build, Docker Compose smoke tests, Helm lint/render and Terraform formatting/validation.
-- Jenkins declarative pipeline: Node and Maven validation, image build, Compose smoke test, Helm checks, optional SonarQube and Trivy stages, optional commit-tagged Docker Hub/ECR publishing for all application images.
-- Docker: multi-stage frontend build, non-root backend, unprivileged Nginx frontend, health checks and a private database network.
-- Kubernetes packaging: Helm charts for the legacy stack and the Catalog, Orders and Inventory services, each with a separate database workload, probes and resource/security settings.
-- GitOps starter: Argo CD Application configured for manual sync until environment values are reviewed.
-- Infrastructure as code starter: Terraform VPC, EKS managed node group and immutable ECR repositories.
-- Operations: security baseline, Kubernetes troubleshooting, deployment rollback and PostgreSQL backup/restore runbooks.
-- Monitoring starter: PrometheusRule examples and kube-prometheus-stack guide.
+## DevOps stack
 
-> This is a learning/portfolio lab and a staged microservices migration, not yet production-ready. The Helm PostgreSQL StatefulSet, default lab credentials, Terraform starter, monitoring rules and optional integrations must be reviewed and tested for the target environment. A project does not itself establish years of professional experience.
+- GitHub Actions: Maven tests, frontend lint/build, Docker Compose integration smoke tests, Helm lint/render and Terraform validation.
+- Jenkins: validation, image builds, optional SonarQube and Trivy scans, optional Docker Hub/ECR publishing.
+- Docker Compose: isolated service databases, health-gated dependencies and local integration testing.
+- Kubernetes: Helm charts for the frontend gateway plus Catalog, Orders and Inventory.
+- GitOps: Argo CD Applications for each service; sync is intentionally manual.
+- Terraform: VPC, EKS managed nodes and immutable ECR repositories for frontend and all microservices.
+- Operations: Prometheus alert examples, troubleshooting and deployment/restore runbooks.
+
+This is a learning/portfolio platform, not a production-ready commerce system. Configure real credentials only in secret managers or CI credentials; never commit them. Review AWS cost before provisioning EKS, NAT Gateway, load balancers or EC2 resources.
 
 ## Repository layout
 
 ```text
-backend/          Node.js API, tests and Dockerfile
-services/              Catalog, Orders and Inventory Java/Spring Boot microservices
-  catalog-service/      Maven build, tests and Dockerfile
-  orders-service/       Maven build, tests and Dockerfile
-  inventory-service/    Maven build, tests and Dockerfile
-frontend/         React UI, Nginx config and multi-stage Dockerfile
-database/         Separate PostgreSQL initialization SQL for each service
-docker-compose.yml  Local stack with isolated database per service
-Jenkinsfile       CI pipeline with Maven, SonarQube and opt-in integrations
-helm/              Kubernetes Helm charts for all services
-.github/workflows/ci.yml  Pull request CI
-helm/bookstore/   Kubernetes Helm chart
-argocd/           GitOps Application starter
-terraform/eks/    AWS VPC, EKS and ECR starter
-monitoring/       Prometheus alert rules and Grafana guide
-docs/             Architecture, CI/CD, security and runbooks
+frontend/                       React UI, Nginx routing, Dockerfile
+services/catalog-service/       Catalog Spring Boot service
+services/orders-service/        Orders Spring Boot service
+services/inventory-service/     Inventory Spring Boot service
+database/                       Per-service PostgreSQL init SQL
+docker-compose.yml              Microservices-only local stack
+Jenkinsfile                     CI/CD pipeline
+helm/                           Frontend and domain-service charts
+argocd/                         GitOps Application manifests
+terraform/eks/                  AWS EKS and ECR starter
+.github/workflows/ci.yml        Pull request CI
+monitoring/                     Prometheus rules and Grafana guide
+docs/                           Architecture and operations runbooks
 ```
-
-## Prerequisites
-
-- Git
-- Docker Engine with Docker Compose v2
-- Node.js 22/npm for local development
-- For Kubernetes: kubectl and Helm 3
-- For cloud provisioning: AWS CLI, Terraform, an AWS account and appropriate IAM permissions
 
 ## Run locally
 
-From the repository root:
+Requirements: Docker Engine and Docker Compose v2. From the repository root:
 
 ```bash
 docker compose up --build -d
 docker compose ps
-curl -fsS http://localhost:5000/api/health
-curl -fsS http://localhost:5000/api/ready
-curl -fsS http://localhost:5000/api/books
+curl -fsS http://localhost:8080/
 curl -fsS http://localhost:8080/api/catalog/books
-curl -fsS http://localhost:8081/actuator/health/readiness
-curl -fsS http://localhost:8081/api/catalog/books
-curl -fsS http://localhost:8082/api/orders
-curl -fsS http://localhost:8083/api/inventory
 curl -fsS http://localhost:8080/api/orders
 curl -fsS http://localhost:8080/api/inventory
+curl -fsS http://localhost:8081/actuator/health/readiness
+curl -fsS http://localhost:8082/actuator/health/readiness
+curl -fsS http://localhost:8083/actuator/health/readiness
 ```
 
-Open http://localhost:8080. PostgreSQL is intentionally not published to the host; use `docker compose exec database psql -U bookuser -d bookstore` for local database inspection.
+Open http://localhost:8080. PostgreSQL is not published to the host. Inspect a database with `docker compose exec catalog-database psql -U cataloguser -d catalogdb` (change service/database/user for Orders or Inventory).
 
-Run tests locally:
+Stop with `docker compose down`. To also delete local database volumes, use `docker compose down -v` (destructive).
+
+## Run tests
+
+Requirements: Java 21, Maven, Node.js 22/npm and Helm 3.
 
 ```bash
-cd backend && npm ci && npm test
-cd ../frontend && npm ci && npm run lint && npm run build
-cd ..
 for service in catalog-service orders-service inventory-service; do (cd services/$service && mvn -B -ntp verify); done
-helm lint ./helm/bookstore
-helm lint ./helm/catalog-service
-helm lint ./helm/orders-service
-helm lint ./helm/inventory-service
-helm template bookstore ./helm/bookstore --namespace bookstore
-helm template catalog-service ./helm/catalog-service --namespace bookstore
-helm template orders-service ./helm/orders-service --namespace bookstore
-helm template inventory-service ./helm/inventory-service --namespace bookstore
+cd frontend && npm ci && npm run lint && npm run build
+cd ..
+for chart in frontend-service catalog-service orders-service inventory-service; do helm lint ./helm/$chart; helm template $chart ./helm/$chart --namespace bookstore >/dev/null; done
+terraform -chdir=terraform/eks fmt -check -recursive
+terraform -chdir=terraform/eks init -backend=false
+terraform -chdir=terraform/eks validate
 ```
 
-Stop the stack with `docker compose down`. To remove the local database volume too (destructive), use `docker compose down -v`.
+## Suggested learning path
 
-The Compose database password and Helm default password are for disposable local development only. Never reuse them in shared or production environments.
+1. Run Compose and test each service independently and through Nginx.
+2. Inspect the CI workflow and Jenkinsfile; configure Jenkins credentials and agents.
+3. Add SonarQube/Trivy integrations and review findings.
+4. Build and push immutable commit-tagged images to a registry.
+5. Deploy the three Helm charts to a disposable Kubernetes cluster.
+6. Configure environment-specific image values and manually sync Argo CD.
+7. Add metrics, tracing, alerting, contract tests, backups and rollback drills.
+8. Review Terraform plan and costs before creating EKS. Destroy lab infrastructure after practice.
 
-## Recommended learning path
+## Known engineering work before production
 
-1. Run the app locally and understand each tier and health/readiness check.
-2. Review GitHub Actions and fix any failed CI stages.
-3. Configure Jenkins Multibranch Pipeline and optional SonarQube/Trivy integrations.
-4. Validate the Java Catalog Service with Maven and SonarQube, then build/push immutable images to a registry.
-5. Deploy the Helm chart to a disposable Kubernetes cluster and practice troubleshooting.
-6. Configure environment-specific values and manually sync Argo CD.
-7. Add monitoring, test alert delivery and practice rollback/restore.
-8. Review Terraform, set a supported EKS version and trusted API endpoint CIDR, then plan AWS infrastructure.
-9. Deploy to EKS, validate the workload and destroy lab resources when finished.
-
-## Engineering principles
-
-- Never commit real credentials, tokens, kubeconfigs, private keys, Terraform state or database dumps.
-- Prefer immutable commit-SHA image tags; promote the same tested image between environments.
-- Keep PostgreSQL private and use least-privilege IAM/RBAC.
-- Review CI and rendered manifests before deploying.
-- Test backup/restore, rollback and failure scenarios.
-- Record evidence, diagnosis, remediation and follow-up actions for each operational exercise.
-
-See the runbooks under `docs/runbooks/` and the setup notes under `docs/`.
+- Move stock reservation to an atomic/transactional operation to prevent overselling.
+- Add idempotency keys, durable order orchestration and reconciliation/outbox patterns.
+- Add authentication/authorization, rate limiting and secret management.
+- Add service-to-service contract tests, distributed tracing and meaningful SLO alerts.
+- Replace learning-grade in-cluster PostgreSQL with a reviewed managed database architecture and tested backup/restore.
