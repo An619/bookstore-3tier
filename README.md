@@ -8,16 +8,16 @@ A hands-on DevOps portfolio lab around a three-tier application. The repository 
 - **Catalog domain:** Java 21 + Spring Boot Catalog Service with its own PostgreSQL database.
 - **Orders domain:** Java 21 + Spring Boot Orders Service with its own PostgreSQL database and order API.
 - **Inventory domain:** Java 21 + Spring Boot Inventory Service with its own PostgreSQL database, stock query, reserve and release endpoints.
-- **Legacy routes:** Node.js + Express API remains for business capabilities not yet migrated.
+- **Legacy code:** the original Node.js API is retained only for regression-test/reference purposes and is no longer part of the running application stack.
 - **Data tier:** PostgreSQL.
 - **Local runtime:** Docker Compose with health-gated dependencies and a persistent development database volume.
 
 ## DevOps capabilities in this repository
 
-- GitHub Actions CI: backend unit tests, frontend lint/build, Docker Compose smoke tests, Helm lint/render and Terraform formatting/validation.
+- GitHub Actions CI: legacy API regression tests, all three Maven service tests, frontend lint/build, Docker Compose microservices smoke tests, Helm lint/render and Terraform formatting/validation.
 - Jenkins declarative pipeline: Node and Maven validation, image build, Compose smoke test, Helm checks, optional SonarQube and Trivy stages, optional commit-tagged Docker Hub/ECR publishing for all application images.
-- Docker: multi-stage frontend build, non-root backend, unprivileged Nginx frontend, health checks and a private database network.
-- Kubernetes packaging: Helm charts for the legacy stack and the Catalog, Orders and Inventory services, each with a separate database workload, probes and resource/security settings.
+- Docker: non-root Java service images, multi-stage frontend build, unprivileged Nginx frontend, health checks and a private database network.
+- Kubernetes packaging: separate Helm charts for Catalog, Orders and Inventory, each with a separate database workload, probes and resource/security settings. `helm/bookstore` is retained as a deprecated migration reference only.
 - GitOps starter: Argo CD Application configured for manual sync until environment values are reviewed.
 - Infrastructure as code starter: Terraform VPC, EKS managed node group and immutable ECR repositories.
 - Operations: security baseline, Kubernetes troubleshooting, deployment rollback and PostgreSQL backup/restore runbooks.
@@ -28,7 +28,7 @@ A hands-on DevOps portfolio lab around a three-tier application. The repository 
 ## Repository layout
 
 ```text
-backend/          Node.js API, tests and Dockerfile
+backend/          Retained legacy Node.js API regression tests/reference (not in runtime)
 services/              Catalog, Orders and Inventory Java/Spring Boot microservices
   catalog-service/      Maven build, tests and Dockerfile
   orders-service/       Maven build, tests and Dockerfile
@@ -61,9 +61,6 @@ From the repository root:
 ```bash
 docker compose up --build -d
 docker compose ps
-curl -fsS http://localhost:5000/api/health
-curl -fsS http://localhost:5000/api/ready
-curl -fsS http://localhost:5000/api/books
 curl -fsS http://localhost:8080/api/catalog/books
 curl -fsS http://localhost:8081/actuator/health/readiness
 curl -fsS http://localhost:8081/api/catalog/books
@@ -73,7 +70,7 @@ curl -fsS http://localhost:8080/api/orders
 curl -fsS http://localhost:8080/api/inventory
 ```
 
-Open http://localhost:8080. PostgreSQL is intentionally not published to the host; use `docker compose exec database psql -U bookuser -d bookstore` for local database inspection.
+Open http://localhost:8080. PostgreSQL is intentionally not published to the host. Inspect a service database with `docker compose exec catalog-database psql -U cataloguser -d catalogdb` (or use `orders-database` / `inventory-database` with their configured users and database names).
 
 Run tests locally:
 
@@ -98,7 +95,7 @@ The Compose database password and Helm default password are for disposable local
 
 ## Recommended learning path
 
-1. Run the app locally and understand each tier and health/readiness check.
+1. Run the microservices stack locally and understand each service and health/readiness check.
 2. Review GitHub Actions and fix any failed CI stages.
 3. Configure Jenkins Multibranch Pipeline and optional SonarQube/Trivy integrations.
 4. Validate the Java Catalog Service with Maven and SonarQube, then build/push immutable images to a registry.
