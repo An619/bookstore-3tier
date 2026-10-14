@@ -32,9 +32,9 @@ These are throwaway lab passwords only. Do not reuse real credentials.
 
 ```bash
 kubectl create namespace bookstore --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n bookstore create secret generic catalog-db-secret --from-literal=password='catalog-lab-change-me' --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n bookstore create secret generic orders-db-secret --from-literal=password='orders-lab-change-me' --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n bookstore create secret generic inventory-db-secret --from-literal=password='inventory-lab-change-me' --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n bookstore create secret generic catalog-db-secret --from-literal=username='cataloguser' --from-literal=password='catalog-lab-change-me' --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n bookstore create secret generic orders-db-secret --from-literal=username='serviceuser' --from-literal=password='orders-lab-change-me' --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n bookstore create secret generic inventory-db-secret --from-literal=username='serviceuser' --from-literal=password='inventory-lab-change-me' --dry-run=client -o yaml | kubectl apply -f -
 ```
 
 If a chart expects a different secret key, inspect its templates before installing; never guess or paste production credentials.
