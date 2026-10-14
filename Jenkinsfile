@@ -41,7 +41,7 @@ pipeline {
             }
         }
 
-        stage('Backend validation') {
+        stage('Legacy Node API regression tests (not deployed)') {
             steps {
                 dir('backend') {
                     sh 'node --version'
@@ -163,16 +163,6 @@ pipeline {
                 sh 'docker compose up --build -d'
                 sh '''
                     set -eu
-                    attempt=0
-                    until curl --fail --silent http://localhost:5000/api/ready; do
-                      attempt=$((attempt + 1))
-                      if [ "$attempt" -ge 20 ]; then
-                        docker compose logs
-                        exit 1
-                      fi
-                      sleep 3
-                    done
-                    curl --fail --silent http://localhost:5000/api/books | grep -q "DevOps for Beginners"
                     curl --fail --silent http://localhost:8080/ > /dev/null
                     curl --fail --silent http://localhost:8080/api/catalog/books | grep -q "Kubernetes Basics"
                     attempt=0
