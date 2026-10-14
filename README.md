@@ -19,7 +19,7 @@ The frontend currently demonstrates the order flow by reserving inventory and th
 - GitHub Actions: Maven tests, frontend lint/build, Docker Compose integration smoke tests, Helm lint/render and Terraform validation.
 - Jenkins: validation, image builds, optional SonarQube and Trivy scans, optional Docker Hub/ECR publishing.
 - Docker Compose: isolated service databases, health-gated dependencies and local integration testing.
-- Kubernetes: Helm charts for Catalog, Orders and Inventory.
+- Kubernetes: Helm charts for the frontend gateway plus Catalog, Orders and Inventory.
 - GitOps: Argo CD Applications for each service; sync is intentionally manual.
 - Terraform: VPC, EKS managed nodes and immutable ECR repositories for frontend and all microservices.
 - Operations: Prometheus alert examples, troubleshooting and deployment/restore runbooks.
@@ -36,7 +36,7 @@ services/inventory-service/     Inventory Spring Boot service
 database/                       Per-service PostgreSQL init SQL
 docker-compose.yml              Microservices-only local stack
 Jenkinsfile                     CI/CD pipeline
-helm/                           One chart per microservice
+helm/                           Frontend and domain-service charts
 argocd/                         GitOps Application manifests
 terraform/eks/                  AWS EKS and ECR starter
 .github/workflows/ci.yml        Pull request CI
@@ -72,7 +72,7 @@ Requirements: Java 21, Maven, Node.js 22/npm and Helm 3.
 for service in catalog-service orders-service inventory-service; do (cd services/$service && mvn -B -ntp verify); done
 cd frontend && npm ci && npm run lint && npm run build
 cd ..
-for chart in catalog-service orders-service inventory-service; do helm lint ./helm/$chart; helm template $chart ./helm/$chart --namespace bookstore >/dev/null; done
+for chart in frontend-service catalog-service orders-service inventory-service; do helm lint ./helm/$chart; helm template $chart ./helm/$chart --namespace bookstore >/dev/null; done
 terraform -chdir=terraform/eks fmt -check -recursive
 terraform -chdir=terraform/eks init -backend=false
 terraform -chdir=terraform/eks validate
