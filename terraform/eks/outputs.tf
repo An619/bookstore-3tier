@@ -23,6 +23,21 @@ output "frontend_ecr_repository_url" {
   value       = aws_ecr_repository.frontend.repository_url
 }
 
+output "catalog_service_ecr_repository_url" {
+  description = "Catalog service ECR repository URL."
+  value       = aws_ecr_repository.catalog_service.repository_url
+}
+
+output "orders_service_ecr_repository_url" {
+  description = "Orders service ECR repository URL."
+  value       = aws_ecr_repository.orders_service.repository_url
+}
+
+output "inventory_service_ecr_repository_url" {
+  description = "Inventory service ECR repository URL."
+  value       = aws_ecr_repository.inventory_service.repository_url
+}
+
 output "configure_kubectl_command" {
   description = "Command to configure kubectl for this cluster."
   value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks.cluster_name}"
