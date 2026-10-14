@@ -4,11 +4,22 @@ image:
   tag: local
   pullPolicy: IfNotPresent
 service:
+  type: ClusterIP
   port: 8082
 database:
   host: orders-service-postgres
+  port: 5432
   name: ordersdb
   username: serviceuser
-  secretName: orders-db-secret
-  storage: 5Gi
+  password: local-orders-change-me
+  existingSecret: ""
+  secretName: ""
+  storage: 1Gi
   image: postgres:16-alpine
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

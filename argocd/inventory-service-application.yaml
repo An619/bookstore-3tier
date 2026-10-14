@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/An619/bookstore-3tier.git
-    targetRevision: main
+    targetRevision: feature/devops-platform-foundation
     path: helm/inventory-service
   destination:
     server: https://kubernetes.default.svc

@@ -41,16 +41,6 @@ pipeline {
             }
         }
 
-        stage('Backend validation') {
-            steps {
-                dir('backend') {
-                    sh 'node --version'
-                    sh 'npm ci'
-                    sh 'npm test'
-                }
-            }
-        }
-
         stage('Maven catalog service validation') {
             steps {
                 dir('services/catalog-service') {

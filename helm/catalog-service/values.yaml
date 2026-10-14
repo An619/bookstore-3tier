@@ -12,8 +12,9 @@ database:
   port: 5432
   name: catalogdb
   username: cataloguser
-  existingSecret: catalog-db-secret
-  storage: 5Gi
+  password: local-catalog-only-change-me
+  existingSecret: ""
+  storage: 1Gi
   image: postgres:16-alpine
 resources:
   requests:
@@ -30,5 +31,4 @@ containerSecurityContext:
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: true
   capabilities:
-    drop:
-      - ALL
+    drop: ["ALL"]
