@@ -1,6 +1,6 @@
 # Terraform: AWS EKS lab
 
-This configuration provisions a VPC with public/private subnets, one NAT gateway, an EKS cluster with managed worker nodes, and two immutable ECR repositories with image scanning on push and an untagged-image lifecycle policy.
+This configuration provisions a VPC with public/private subnets, one NAT gateway, an EKS cluster with managed worker nodes, and four immutable ECR repositories (frontend, catalog, orders and inventory) with image scanning on push and an untagged-image lifecycle policy.
 
 ## Prerequisites
 - Terraform 1.6+
@@ -15,7 +15,7 @@ cd terraform/eks
 cp terraform.tfvars.example terraform.tfvars
 ```
 
-Edit `terraform.tfvars`: replace the EKS version placeholder and replace the IP placeholder with your trusted public IP in `x.x.x.x/32` format. Do not widen the endpoint to `0.0.0.0/0`.
+Edit terraform.tfvars: replace the EKS version placeholder and replace the IP placeholder with your trusted public IP in x.x.x.x/32 format. Do not widen the endpoint to 0.0.0.0/0.
 
 ## Validate and plan
 
@@ -34,9 +34,10 @@ Review every resource and estimated cost before applying. The NAT gateway, EKS c
 terraform apply
 aws eks update-kubeconfig --region ap-south-1 --name bookstore-lab-eks
 kubectl get nodes
+terraform output
 ```
 
-Use the actual outputs if you change the region/name inputs. Build and push images to the output ECR repositories, then configure Helm values with their full URLs and commit-SHA tags.
+Use the actual outputs if you change the region/name inputs. The output values include ECR URLs for the frontend and each active microservice. Build and push images to those repositories, then configure Helm values with the full repository URLs and immutable commit-SHA tags.
 
 ## Cleanup
 
@@ -46,7 +47,7 @@ After saving any evidence and confirming the environment is no longer needed:
 terraform destroy
 ```
 
-Review the destroy plan carefully. The ECR repositories use `force_delete = false`, so repositories containing images may need to be emptied before destruction. Back up any state and data you need.
+Review the destroy plan carefully. The ECR repositories use force_delete = false, so repositories containing images may need to be emptied before destruction. Back up any state and data you need.
 
 ## Important notes
 - The Terraform code has been added as a starter and must be validated with the Terraform version and AWS region you choose before applying.
