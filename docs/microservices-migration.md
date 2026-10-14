@@ -1,6 +1,6 @@
 # Microservices migration status
 
-The repository now has three separately deployable Java 21/Spring Boot services—Catalog, Orders and Inventory—each with its own PostgreSQL database. Nginx routes all three domain APIs while the legacy Node.js API remains temporarily for routes not yet migrated.
+The active runtime now consists of a React/Nginx frontend plus three separately deployable Java 21/Spring Boot services—Catalog, Orders and Inventory—each with its own PostgreSQL database. Nginx routes the domain APIs only to these microservices. The retired Node.js API under `backend/` is retained for migration history but is not included in Docker Compose, Nginx routing, Jenkins builds, or the active Argo CD application.
 
 ## Service APIs
 
@@ -37,7 +37,7 @@ curl -fsS http://localhost:8080/api/inventory
 docker compose logs -f orders-service inventory-service catalog-service
 ```
 
-Open http://localhost:8080 to confirm the UI gets books from the Catalog Service. The legacy Node.js API remains available on port 5000 during the migration.
+Open http://localhost:8080 to confirm the UI gets books from Catalog and loads Orders and Inventory. The retired Node.js API is not started by Compose.
 
 Stop containers with `docker compose down`. This preserves local data. To delete both local database volumes and all their data, run `docker compose down -v` (destructive).
 
@@ -84,12 +84,12 @@ Use a unique secret password in real environments. The in-chart PostgreSQL workl
 ## DevOps tools
 
 - **Maven** compiles/tests the Java service and packages the executable JAR.
-- **Jenkins** runs Node and Maven validation, builds images, performs Compose smoke tests, validates Helm charts, and can optionally publish immutable commit-SHA tags.
-- **SonarQube** analyzes Java, Node and frontend source. Configure Jenkins credential `sonarqube-token` and `SONAR_HOST_URL`; install SonarScanner on the agent.
+- **Jenkins** validates the frontend and all three Maven services, builds/scans images, performs Compose smoke tests, validates the active Helm charts, and can optionally publish immutable commit-SHA tags.
+- **SonarQube** analyzes Java microservice and frontend source. Configure Jenkins credential `sonarqube-token` and `SONAR_HOST_URL`; install SonarScanner on the agent.
 - **Docker** packages the service in a non-root runtime image.
-- **Kubernetes/Helm** deploys the catalog independently from the remaining legacy API.
-- **Argo CD** watches the catalog Helm chart from Git; its Application uses manual sync intentionally.
+- **Kubernetes/Helm** deploys the frontend and each backend microservice independently. `helm/bookstore` is deprecated and retained only as migration reference.
+- **Argo CD** watches the frontend Helm chart from Git; its Application uses manual sync intentionally. Separate Application manifests exist for Catalog, Orders and Inventory.
 
 ## Remaining migration work
 
-This is a stronger staged microservices migration, but it is not production-complete. Catalog, Orders and Inventory are independently deployable and own separate databases. Order creation does not yet reserve stock transactionally; customer identity, payment/checkout, inter-service authentication, retries/idempotency, distributed tracing, contract testing and production database operations remain future work.
+The legacy Node.js backend is retired from the active runtime; Catalog, Orders and Inventory are independently deployable and own separate databases. This is a microservices architecture for a portfolio lab, but it is not production-complete. Order creation does not yet reserve stock transactionally; customer identity, payment/checkout, inter-service authentication, retries/idempotency, distributed tracing, contract testing and production database operations remain future work.
