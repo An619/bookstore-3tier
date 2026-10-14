@@ -15,14 +15,6 @@
 {{- end -}}
 {{- end -}}
 
-{{- define "bookstore.databaseSecretName" -}}
-{{- if .Values.database.existingSecret -}}
-{{- .Values.database.existingSecret -}}
-{{- else -}}
-{{- include "bookstore.fullname" . }}-database
-{{- end -}}
-{{- end -}}
-
 {{- define "bookstore.labels" -}}
 app.kubernetes.io/name: {{ include "bookstore.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}

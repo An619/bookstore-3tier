@@ -34,12 +34,12 @@ spec:
             - name: SPRING_DATASOURCE_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.database.existingSecret }}
+                  name: {{ .Values.database.existingSecret | default (printf "%s-db-secret" .Release.Name) }}
                   key: username
             - name: SPRING_DATASOURCE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.database.existingSecret }}
+                  name: {{ .Values.database.existingSecret | default (printf "%s-db-secret" .Release.Name) }}
                   key: password
           readinessProbe:
             httpGet:
