@@ -1,6 +1,6 @@
 # Bookstore 3-Tier DevOps Platform
 
-A hands-on DevOps portfolio lab around a three-tier application. The repository is designed to be practiced in Killercoda first and then moved to a local Kubernetes cluster or AWS EKS.
+A microservices-oriented DevOps portfolio lab. The React UI routes to independently deployable Catalog, Orders and Inventory services, each with its own PostgreSQL database. Practice locally in Docker Compose, then move to Kubernetes or AWS EKS.
 
 ## Application architecture
 
