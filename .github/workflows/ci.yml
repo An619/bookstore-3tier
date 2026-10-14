@@ -28,7 +28,6 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: |
-            backend/package-lock.json
             frontend/package-lock.json
 
       - name: Set up Java for Maven microservice
@@ -70,9 +69,9 @@ jobs:
 
       - name: Lint and render Helm charts
         run: |
-          helm lint ./helm/bookstore
-          helm template bookstore ./helm/bookstore --namespace bookstore > /tmp/bookstore-rendered.yaml
-          test -s /tmp/bookstore-rendered.yaml
+          helm lint ./helm/frontend
+          helm template frontend ./helm/frontend --namespace bookstore > /tmp/frontend-rendered.yaml
+          test -s /tmp/frontend-rendered.yaml
           helm lint ./helm/catalog-service
           helm template catalog-service ./helm/catalog-service --namespace bookstore > /tmp/catalog-rendered.yaml
           test -s /tmp/catalog-rendered.yaml
