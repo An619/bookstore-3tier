@@ -41,13 +41,11 @@ Open http://localhost:8080. Stop with `docker compose down`; this preserves data
 
 ## Kubernetes deployment
 
-Each service has a dedicated Helm chart and Argo CD Application. The charts include Deployment/Service and a service-owned PostgreSQL StatefulSet/PVC for learning. Create each database Secret before installing its chart, set immutable image repository/tag values, and review rendered manifests before syncing.
+The frontend gateway and each domain service have dedicated Helm charts and Argo CD Applications. The charts include Deployment/Service and a service-owned PostgreSQL StatefulSet/PVC for learning. Create each database Secret before installing its chart, set immutable image repository/tag values, and review rendered manifests before syncing.
 
 ```bash
 kubectl create namespace bookstore
-helm lint ./helm/catalog-service
-helm lint ./helm/orders-service
-helm lint ./helm/inventory-service
+for chart in frontend-service catalog-service orders-service inventory-service; do helm lint ./helm/$chart; done
 ```
 
 Use managed databases and a secret manager for production. Do not reuse learning credentials.
