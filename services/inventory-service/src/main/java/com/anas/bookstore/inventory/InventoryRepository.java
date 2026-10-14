@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 public interface InventoryRepository extends JpaRepository<InventoryItem, Long> {
     List<InventoryItem> findAllByOrderByBookIdAsc();
@@ -13,6 +14,7 @@ public interface InventoryRepository extends JpaRepository<InventoryItem, Long> 
     boolean existsByBookId(Long bookId);
 
     // A single conditional UPDATE prevents two concurrent requests from reserving the same final units.
+    @Transactional
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
         update InventoryItem i
@@ -22,6 +24,7 @@ public interface InventoryRepository extends JpaRepository<InventoryItem, Long> 
         """)
     int reserveIfAvailable(@Param("bookId") Long bookId, @Param("quantity") int quantity);
 
+    @Transactional
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
         update InventoryItem i
