@@ -30,5 +30,15 @@ public class OrdersController {
         return repository.save(new OrderRecord(request.customerName().trim(), request.bookId(), request.quantity(), "CREATED"));
     }
 
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable long id) {
+        // Deleting does not release inventory: callers must compensate stock explicitly.
+        if (!repository.existsById(id)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
+        repository.deleteById(id);
+    }
+
     public record CreateOrder(String customerName, Long bookId, Integer quantity) {}
 }

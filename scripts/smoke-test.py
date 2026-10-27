@@ -44,6 +44,8 @@ def smoke(base, timeout=180):
     request(base, path + '/reserve?quantity=0', method='POST', expected=400)
     request(base, path + '/reserve?quantity=2147483647', method='POST', expected=409)
     reserved = False
+    order_id = None
+    failure = None
     try:
         stock = request(base, path + '/reserve?quantity=1', method='POST')
         reserved = True
@@ -52,17 +54,36 @@ def smoke(base, timeout=180):
         order = request(base, '/api/orders', method='POST', expected=201, data={
             'customerName': 'CI Smoke Test', 'bookId': book['bookId'], 'quantity': 1,
         })
-        loaded = request(base, f"/api/orders/{order['id']}")
+        order_id = order['id']
+        loaded = request(base, f'/api/orders/{order_id}')
         if loaded['status'] != 'CREATED' or loaded['bookId'] != book['bookId']:
             raise RuntimeError('Created order cannot be read back correctly')
-    finally:
-        # This is a disposable diagnostic order; restore stock even after a failed assertion.
-        if reserved:
+    except (URLError, RuntimeError, ValueError) as error:
+        failure = error
+    # Always compensate, even when an assertion above failed, and always report
+    # the original failure rather than the cleanup result.
+    cleanup_failures = []
+    if reserved:
+        try:
             request(base, path + '/release?quantity=1', method='POST')
+        except (URLError, RuntimeError, ValueError) as error:
+            cleanup_failures.append(f'stock release failed: {error}')
+    if order_id is not None:
+        try:
+            request(base, f'/api/orders/{order_id}', method='DELETE', expected=204)
+        except (URLError, RuntimeError, ValueError) as error:
+            cleanup_failures.append(f'could not delete diagnostic order {order_id}: {error}')
+    if failure is not None:
+        if cleanup_failures:
+            raise RuntimeError(f'{failure}; cleanup also failed: {"; ".join(cleanup_failures)}')
+        raise failure
+    if cleanup_failures:
+        raise RuntimeError('; '.join(cleanup_failures))
     if request(base, path)['availableQuantity'] != book['availableQuantity']:
         raise RuntimeError('Stock compensation did not restore the initial quantity')
     request(base, '/api/not-a-route', expected=404)
-    print('PASS: catalog, inventory validation/reserve/release, order creation/readback and routing')
+    request(base, f'/api/orders/{order_id}', expected=404)
+    print('PASS: catalog, inventory validation/reserve/release, order create/read/delete and routing')
 
 
 if __name__ == '__main__':

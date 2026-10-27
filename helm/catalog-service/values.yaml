@@ -38,3 +38,11 @@ containerSecurityContext:
 imagePullSecrets: []
 networkPolicy:
   enabled: false
+  # Optional: namespace allowed to scrape /actuator/prometheus (e.g. monitoring).
+  metricsNamespace: ""
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  # Must match your Prometheus resource's serviceMonitorSelector labels.
+  labels:
+    release: kube-prometheus-stack

@@ -122,9 +122,10 @@ network policies, authentication, observability and independent schema migration
 - `sh scripts/preflight.sh` checks tool availability, Docker daemon and cluster
   connectivity without printing credential values; exits nonzero if unavailable.
 - `python3 scripts/smoke-test.py --base-url http://localhost:8080` waits for all
-  domain APIs and exercises validation, reserve, create/read order and stock
-  release. **Disposable environments only:** it creates a diagnostic order and
-  restores stock; it does not delete that order.
+  domain APIs and exercises validation, reserve, create/read order, stock release
+  and order deletion. It deletes the diagnostic order and restores stock even
+  when an assertion fails; if cleanup fails it reports that explicitly.
+  **Disposable environments only** — do not point it at production.
 - CI fails on npm high/critical advisories. Maven reports are archived by Jenkins
   and GitHub Actions.
 - Inventory writes now lock the stock row within a transaction, preventing
@@ -132,6 +133,10 @@ network policies, authentication, observability and independent schema migration
   quantities and integer overflow; execute them with Maven on Java 21.
 - All application pods disable automatic Kubernetes API-token mounting and have
   startup probes; private image pull secrets are configurable per chart.
+- Services expose Micrometer/Prometheus metrics at `/actuator/prometheus`, and
+  each chart has an opt-in Prometheus Operator ServiceMonitor. See
+  `monitoring/README.md`; scraping also needs `networkPolicy.metricsNamespace`
+  when NetworkPolicy is enabled.
 - `deploy/examples/frontend-values.yaml` illustrates ingress/TLS and network
   isolation. Set real DNS/TLS values. Install an ingress controller separately;
   create a TLS Secret through your certificate manager. No certificates are

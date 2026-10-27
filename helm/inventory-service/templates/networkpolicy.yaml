@@ -14,6 +14,12 @@ spec:
         - podSelector:
             matchLabels: {app.kubernetes.io/name: bookstore-frontend}
       ports: [{port: 8083}]
+    {{- if .Values.networkPolicy.metricsNamespace }}
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ .Values.networkPolicy.metricsNamespace }}}
+      ports: [{port: 8083}]
+    {{- end }}
   egress:
     - to:
         - namespaceSelector:

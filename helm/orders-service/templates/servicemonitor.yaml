@@ -1,0 +1,18 @@
+{{- if .Values.serviceMonitor.enabled }}
+# Requires the Prometheus Operator CRDs (for example kube-prometheus-stack).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- toYaml .Values.serviceMonitor.labels | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: orders-service
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: {{ .Values.serviceMonitor.interval }}
+{{- end }}
