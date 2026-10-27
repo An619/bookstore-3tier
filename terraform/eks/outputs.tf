@@ -44,8 +44,8 @@ output "configure_kubectl_command" {
 }
 
 output "ebs_csi_role_arn" {
-  description = "IAM role used by the EBS CSI driver (needed for volume provisioning)."
-  value       = aws_iam_role.ebs_csi.arn
+  description = "IAM role for the EBS CSI driver when enable_ebs_csi is true (null otherwise)."
+  value       = one(aws_iam_role.ebs_csi[*].arn)
 }
 
 output "ecr_registry" {

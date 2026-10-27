@@ -15,6 +15,12 @@ database:
   username: serviceuser
   secretName: inventory-db-secret
   storage: 5Gi
+  persistence:
+    # false = emptyDir: no StorageClass/CSI driver needed, data lost on restart.
+    enabled: true
+    # Empty = cluster default StorageClass. Set an EFS/local-path class if you
+    # do not want EBS volumes.
+    storageClassName: ""
   image: postgres:16-alpine
 
 imagePullSecrets: []

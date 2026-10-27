@@ -203,7 +203,9 @@ without implementing and testing authentication and a durable checkout workflow.
 
 - Browser VM (no local Docker): `docs/killercoda.md`, using `make lab-light`.
 - AWS EKS: `docs/eks.md` with `make eks-plan|eks-apply|eks-images|eks-deploy|
-  eks-release|eks-status|eks-destroy`. ECR names are
+  eks-release|eks-status|eks-destroy`. No EBS is required: the default
+  `EKS_DB_STORAGE=ephemeral` uses emptyDir, and `pvc`/`external` cover durable
+  options. ECR names are
   `<project>-<environment>-<component>`; pass the same prefix to
   `scripts/prepare-release.py --repository-prefix` (the Makefile target does).
 

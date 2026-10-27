@@ -10,7 +10,7 @@ destroy everything when finished.
 | Step | Command | Notes |
 | --- | --- | --- |
 | Review planned changes | `make eks-plan` | No changes; requires a filled `terraform.tfvars` |
-| Create cluster + ECR | `make eks-apply` | VPC, EKS, managed nodes, 5 ECR repos, EBS CSI driver. Type the cluster name to confirm; set `EKS_AUTO_APPROVE=true` to skip (CI only) |
+| Create cluster + ECR | `make eks-apply` | VPC, EKS, managed nodes, 5 ECR repos. **No EBS by default.** Type the cluster name to confirm; `EKS_AUTO_APPROVE=true` skips (CI only) |
 | Push images | `make eks-images` | Four images tagged with the 12-character commit SHA |
 | Install workloads | `make eks-deploy` | gp3 StorageClass, database Secrets, Helm releases from ECR |
 | Reviewed GitOps manifest | `make eks-release` | Writes `deploy/releases/bookstore-lab.json` for Argo CD |
@@ -70,14 +70,42 @@ Service is created (AWS load balancer provisioning).
 commit's images and keeps existing database Secrets (it never regenerates
 passwords, which would break a running database).
 
-## Storage: the gap this fixes
+## Storage: no EBS required
 
-EKS has no in-tree EBS provisioner. `terraform/eks` now creates
-`aws-ebs-csi-driver` with its own IRSA role, and `make eks-deploy` applies
-`deploy/eks/storageclass.yaml` (gp3, encrypted, `WaitForFirstConsumer`). Without
-both, the PostgreSQL PersistentVolumeClaims stay `Pending` forever. If your
-cluster already has a default StorageClass you prefer, remove the default
-annotation from `gp3` and set `database.storage`/class values instead.
+This path does **not** use EBS. EKS has no built-in volume provisioner, so
+instead of installing the EBS CSI driver the deployment chooses how the three
+PostgreSQL databases get storage via `EKS_DB_STORAGE`:
+
+| Mode | What happens | Data survives pod restart? | Use when |
+| --- | --- | --- | --- |
+| `ephemeral` (**default**) | Databases run with `emptyDir`; no StorageClass, no CSI driver, no EBS volumes | **No** | Practising the full topology cheaply |
+| `pvc` | Databases use an existing StorageClass you name with `EKS_STORAGE_CLASS` (EFS, Longhorn, or EBS if you have it) | Yes, if the provisioner is durable | You already run a storage provider |
+| `external` | No database pods; services point at managed PostgreSQL via `EKS_DB_HOST_CATALOG/ORDERS/INVENTORY`; Secrets must pre-exist | Yes (managed by the provider) | Anything you care about |
+
+Examples:
+
+```sh
+make eks-deploy                                  # ephemeral (default), no EBS
+EKS_DB_STORAGE=pvc EKS_STORAGE_CLASS=efs-sc make eks-deploy   # your own class
+EKS_DB_STORAGE=external \
+  EKS_DB_HOST_CATALOG=catalog.abc.ap-south-1.rds.amazonaws.com \
+  EKS_DB_HOST_ORDERS=orders.abc.ap-south-1.rds.amazonaws.com \
+  EKS_DB_HOST_INVENTORY=inventory.abc.ap-south-1.rds.amazonaws.com \
+  make eks-deploy
+```
+
+With `ephemeral`, a database pod restart **destroys its data**: the smoke test
+and demo orders disappear, and the init script re-seeds the sample rows. That is
+acceptable for a practice cluster; do not rely on it. With `pvc`, no
+StorageClass is created for you: install EFS CSI, Longhorn or similar, or run
+`kubectl apply -f deploy/eks/optional/ebs-storageclass.yaml` **only** if you
+deliberately enabled EBS.
+
+### If you later want EBS
+
+Set `enable_ebs_csi = true` in `terraform/eks/terraform.tfvars` (it defaults to
+`false`), apply, then use `EKS_DB_STORAGE=pvc EKS_STORAGE_CLASS=gp3` together
+with the optional StorageClass file above. Nothing enables EBS implicitly.
 
 ## GitOps with Argo CD
 
@@ -97,8 +125,9 @@ cluster. Note that a private ECR registry needs pull permission for the nodes
 
 - Single NAT gateway, two AZs and small nodes: fine for a lab, not for real
   traffic. No autoscaling policy tuning, no PodDisruptionBudgets.
-- Databases are in-cluster StatefulSets with `Delete` reclaim policy. Production
-  needs RDS/operator, backups with PITR, and tested restores.
+- The default `ephemeral` database storage loses data on every pod restart. For
+  anything real, use `external` managed PostgreSQL (or a durable StorageClass)
+  with backups and tested restores.
 - No authentication/authorization in the application, no WAF, no TLS unless you
   add an ingress controller and certificates.
 - Secrets are Kubernetes Secrets created from locally generated passwords. Use
@@ -122,8 +151,10 @@ after recreating.
   entry; check `kubectl config current-context`.
 - Pods `ImagePullBackOff` — the tag is the current commit; rerun
   `make eks-images` after new commits, or check the ECR repository names.
-- `Pending` pods with unbound PVCs — confirm the EBS CSI add-on is `ACTIVE`
-  (`kubectl get pods -n kube-system`) and that `gp3` exists
-  (`kubectl get storageclass`).
+- Database pods `Pending` with unbound PVCs — only applies in `pvc` mode: check
+  `kubectl get storageclass` for the class you named and that its provisioner is
+  running. In the default `ephemeral` mode there are no PVCs at all.
+- Data vanished after a pod restart — expected in `ephemeral` mode; switch to
+  `pvc` or `external` for persistence.
 - Load balancer hostname empty — wait; check
   `kubectl -n bookstore describe service bookstore-frontend` events.

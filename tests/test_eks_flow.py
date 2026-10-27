@@ -123,11 +123,14 @@ exit 0
         self.assertNotEqual(0, result.returncode)
         self.assertIn('sh scripts/eks.sh apply', result.stderr)
 
-    def test_deploy_creates_secrets_storage_and_helm_releases(self):
+    def test_deploy_creates_secrets_and_uses_ephemeral_storage_by_default(self):
         result = self.run_eks('deploy')
         self.assertEqual(0, result.returncode, result.stderr)
         calls = '\n'.join(self.calls())
-        self.assertIn('kubectl apply -f deploy/eks/storageclass.yaml', calls)
+        # No EBS, no StorageClass applied by default.
+        self.assertNotIn('storageclass', calls.lower())
+        self.assertIn('database.persistence.enabled=false', calls)
+        self.assertIn('kubectl create namespace bookstore', calls)
         self.assertIn('create secret generic catalog-db-secret', calls)
         self.assertIn('create secret generic orders-db-secret', calls)
         self.assertIn('create secret generic inventory-db-secret', calls)
@@ -141,6 +144,59 @@ exit 0
         self.assertIn('service.type=LoadBalancer', calls)
         self.assertIn(f'image.tag={self.revision()}', calls)
         self.assertIn('rollout status deployment/bookstore-frontend', calls)
+
+    def test_pvc_mode_uses_an_existing_storage_class(self):
+        result = subprocess.run(['sh', str(ROOT / 'scripts/eks.sh'), 'deploy'], cwd=ROOT,
+                                env=dict(self.env, EKS_DB_STORAGE='pvc', EKS_STORAGE_CLASS='efs-sc'),
+                                capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        calls = '\n'.join(self.calls())
+        self.assertIn('database.persistence.enabled=true', calls)
+        self.assertIn('database.persistence.storageClassName=efs-sc', calls)
+        self.assertNotIn('ebs.csi.aws.com', calls)
+
+    def test_pvc_mode_requires_a_class_and_creates_none(self):
+        result = subprocess.run(['sh', str(ROOT / 'scripts/eks.sh'), 'deploy'], cwd=ROOT,
+                                env=dict(self.env, EKS_DB_STORAGE='pvc', EKS_STORAGE_CLASS=''),
+                                capture_output=True, text=True)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('EKS_STORAGE_CLASS', result.stderr)
+        self.assertFalse(any('create' in c and 'storageclass' in c.lower() for c in self.calls()))
+
+    def test_external_database_mode_skips_pods_and_requires_hosts(self):
+        env = dict(self.env, EKS_DB_STORAGE='external')
+        result = subprocess.run(['sh', str(ROOT / 'scripts/eks.sh'), 'deploy'], cwd=ROOT,
+                                env=env, capture_output=True, text=True)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('EKS_DB_HOST_CATALOG', result.stderr)
+
+        # Managed-database credentials must already exist as Secrets.
+        (self.root / 'secrets-exist').touch()
+        hosts = dict(env, EKS_DB_HOST_CATALOG='catalog.db.example', EKS_DB_HOST_ORDERS='orders.db.example',
+                     EKS_DB_HOST_INVENTORY='inventory.db.example')
+        result = subprocess.run(['sh', str(ROOT / 'scripts/eks.sh'), 'deploy'], cwd=ROOT,
+                                env=hosts, capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        calls = '\n'.join(self.calls())
+        self.assertIn('database.deploy=false', calls)
+        self.assertIn('database.host=catalog.db.example', calls)
+        self.assertIn('database.host=orders.db.example', calls)
+        self.assertIn('database.host=inventory.db.example', calls)
+
+    def test_external_mode_requires_managed_database_secrets(self):
+        # The kubectl fake reports Secrets missing unless the marker file exists.
+        env = dict(self.env, EKS_DB_STORAGE='external', EKS_DB_HOST_CATALOG='a', EKS_DB_HOST_ORDERS='b',
+                   EKS_DB_HOST_INVENTORY='c')
+        result = subprocess.run(['sh', str(ROOT / 'scripts/eks.sh'), 'deploy'], cwd=ROOT,
+                                env=env, capture_output=True, text=True)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('Secret catalog-db-secret is missing', result.stderr)
+
+    def test_invalid_storage_mode_is_rejected(self):
+        result = subprocess.run(['sh', str(ROOT / 'scripts/eks.sh'), 'deploy'], cwd=ROOT,
+                                env=dict(self.env, EKS_DB_STORAGE='ebs'), capture_output=True, text=True)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('Unknown EKS_DB_STORAGE', result.stderr)
 
     def test_existing_secrets_are_not_overwritten(self):
         (self.root / 'secrets-exist').touch()
@@ -250,15 +306,22 @@ class ReleasePrefixTest(unittest.TestCase):
 
 
 class TerraformEksTest(unittest.TestCase):
-    def test_storage_provisioning_is_configured(self):
+    def test_ebs_is_optional_and_disabled_by_default(self):
         main = (ROOT / 'terraform/eks/main.tf').read_text()
-        self.assertIn('aws_eks_addon" "ebs_csi"', main)
-        self.assertIn('AmazonEBSCSIDriverPolicy', main)
-        self.assertIn('system:serviceaccount:kube-system:ebs-csi-controller-sa', main)
-        self.assertIn('module.eks.oidc_provider_arn', main)
-        storageclass = (ROOT / 'deploy/eks/storageclass.yaml').read_text()
-        self.assertIn('provisioner: ebs.csi.aws.com', storageclass)
-        self.assertIn('encrypted: "true"', storageclass)
+        variables = (ROOT / 'terraform/eks/variables.tf').read_text()
+        self.assertIn('variable "enable_ebs_csi"', variables)
+        self.assertRegex(variables, r'variable "enable_ebs_csi"\s*\{[^}]*default\s*=\s*false')
+        self.assertEqual(4, main.count('var.enable_ebs_csi ? 1 : 0'))
+        self.assertIn('one(aws_iam_role.ebs_csi[*].arn)',
+                      (ROOT / 'terraform/eks/outputs.tf').read_text())
+
+    def test_default_deployment_references_no_ebs_storage_class(self):
+        script = (ROOT / 'scripts/eks.sh').read_text()
+        self.assertNotIn('kubectl apply -f deploy/eks/storageclass.yaml', script)
+        self.assertIn('EKS_DB_STORAGE:-ephemeral', script)
+        optional = ROOT / 'deploy/eks/optional/ebs-storageclass.yaml'
+        self.assertTrue(optional.exists())
+        self.assertIn('not used by the default deployment path', optional.read_text())
 
     def test_ecr_names_match_the_release_generator_prefix(self):
         main = (ROOT / 'terraform/eks/main.tf').read_text()

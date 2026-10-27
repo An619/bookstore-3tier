@@ -1,12 +1,12 @@
-# gp3 volumes for the bundled PostgreSQL StatefulSets on EKS. Requires the EBS
-# CSI driver add-on (created by terraform/eks) with its IAM role.
+# OPTIONAL - not used by the default deployment path.
+# Only apply this if you enabled EBS in Terraform (enable_ebs_csi = true). The
+# default path runs the databases with ephemeral storage (no EBS, data lost on
+# pod restart) or against an external database.
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: gp3
   annotations:
-    # Lab default. If another default StorageClass already exists, remove this
-    # annotation and set database.storageClassName in the charts instead.
     storageclass.kubernetes.io/is-default-class: "true"
 provisioner: ebs.csi.aws.com
 parameters:

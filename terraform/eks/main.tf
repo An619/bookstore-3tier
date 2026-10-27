@@ -251,10 +251,14 @@ resource "aws_ecr_lifecycle_policy" "inventory_service" {
 }
 
 # ---------------------------------------------------------------------------
-# EBS CSI driver: EKS has no in-tree provisioner, so the PostgreSQL
-# PersistentVolumeClaims stay Pending without this add-on plus an IAM role.
+# Optional block storage (EBS CSI driver). Disabled by default: this project is
+# designed to run without EBS. Enable only if you want persistent volumes backed
+# by EBS; otherwise use ephemeral database storage, an external database, or a
+# different StorageClass (for example EFS).
 # ---------------------------------------------------------------------------
 data "aws_iam_policy_document" "ebs_csi_assume_role" {
+  count = var.enable_ebs_csi ? 1 : 0
+
   statement {
     effect  = "Allow"
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -279,23 +283,25 @@ data "aws_iam_policy_document" "ebs_csi_assume_role" {
 }
 
 resource "aws_iam_role" "ebs_csi" {
+  count              = var.enable_ebs_csi ? 1 : 0
   name               = "${local.name}-ebs-csi"
-  assume_role_policy = data.aws_iam_policy_document.ebs_csi_assume_role.json
+  assume_role_policy = data.aws_iam_policy_document.ebs_csi_assume_role[0].json
   tags               = local.common_tags
 }
 
 resource "aws_iam_role_policy_attachment" "ebs_csi" {
-  role       = aws_iam_role.ebs_csi.name
+  count      = var.enable_ebs_csi ? 1 : 0
+  role       = aws_iam_role.ebs_csi[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 }
 
 resource "aws_eks_addon" "ebs_csi" {
+  count                       = var.enable_ebs_csi ? 1 : 0
   cluster_name                = module.eks.cluster_name
   addon_name                  = "aws-ebs-csi-driver"
-  service_account_role_arn    = aws_iam_role.ebs_csi.arn
+  service_account_role_arn    = aws_iam_role.ebs_csi[0].arn
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "PRESERVE"
 
-  # The add-on needs worker nodes to schedule its controller pods.
   depends_on = [module.eks]
 }

@@ -72,6 +72,9 @@ jobs:
         with:
           version: v3.17.3
 
+      - name: Lint and render every chart profile
+        run: sh scripts/check-charts.sh
+
       - name: Lint and render Helm charts
         run: |
           helm lint ./helm/frontend
@@ -113,9 +116,7 @@ jobs:
             grep -q 'memory: 128Mi' "/tmp/$chart-light.yaml"
           done
           # Avoid a PyYAML dependency on the runner: assert the key fields.
-          grep -q 'kind: StorageClass' deploy/eks/storageclass.yaml
-          grep -q 'provisioner: ebs.csi.aws.com' deploy/eks/storageclass.yaml
-          grep -q 'encrypted: "true"' deploy/eks/storageclass.yaml
+          grep -q 'not used by the default deployment path' deploy/eks/optional/ebs-storageclass.yaml
 
       - name: Build and start microservices stack
         env:

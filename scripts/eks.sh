@@ -6,6 +6,7 @@
 #   sh scripts/eks.sh images    # build + push images tagged with the commit SHA
 #   sh scripts/eks.sh secrets   # create the three database Secrets (kept if present)
 #   sh scripts/eks.sh deploy    # helm upgrade --install from ECR images
+#                               # database storage: EKS_DB_STORAGE=ephemeral (default) | pvc | external
 #   sh scripts/eks.sh release   # write a reviewed Argo CD manifest for this SHA
 #   sh scripts/eks.sh status    # cluster, pods and the frontend address
 #   sh scripts/eks.sh destroy   # terraform destroy (asks you to type a confirmation)
@@ -17,6 +18,7 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
 
 namespace=${EKS_NAMESPACE:-bookstore}
+db_storage=${EKS_DB_STORAGE:-ephemeral}
 cluster=${EKS_CLUSTER:-bookstore-lab-eks}
 region=${AWS_REGION:-ap-south-1}
 project=${EKS_PROJECT:-bookstore}
@@ -76,15 +78,64 @@ kubeconfig() {
     || die "Could not write a kubeconfig for $cluster. Does it exist and is your IAM role allowed to describe it?"
 }
 
-ensure_storage() {
-  # A default gp3 StorageClass backed by the EBS CSI driver; PostgreSQL PVCs
-  # stay Pending without it.
-  kubectl apply -f deploy/eks/storageclass.yaml >/dev/null
-  kubectl get storageclass gp3 -o jsonpath='{.metadata.annotations.storageclass\.kubernetes\.io/is-default-class}' 2>/dev/null \
-    | grep -q true || info 'note: gp3 is the lab default; existing default StorageClasses were left untouched'
+# Translate EKS_DB_STORAGE into chart values. EBS is never required:
+#   ephemeral (default) - emptyDir, no StorageClass or CSI driver, data is lost
+#                         when a database pod is replaced
+#   pvc                 - use an existing StorageClass you name (EBS, EFS, ...)
+#   external            - no database pods at all; point the services at
+#                         managed PostgreSQL hosts
+validate_storage_config() {
+  case "$db_storage" in
+    ephemeral) ;;
+    pvc)
+      [ -n "${EKS_STORAGE_CLASS:-}" ] \
+        || die 'EKS_DB_STORAGE=pvc needs EKS_STORAGE_CLASS=<existing class> (for example efs-sc). No StorageClass is created for you.'
+      ;;
+    external)
+      [ -n "${EKS_DB_HOST_CATALOG:-}" ] && [ -n "${EKS_DB_HOST_ORDERS:-}" ] \
+        && [ -n "${EKS_DB_HOST_INVENTORY:-}" ] \
+        || die 'EKS_DB_STORAGE=external needs EKS_DB_HOST_CATALOG, EKS_DB_HOST_ORDERS and EKS_DB_HOST_INVENTORY.'
+      ;;
+    *)
+      die "Unknown EKS_DB_STORAGE '$db_storage'. Use ephemeral, pvc or external."
+      ;;
+  esac
+}
+
+# Per-chart values for the chosen storage mode. EBS is never required.
+database_args() {
+  component=$1
+  case "$db_storage" in
+    ephemeral)
+      # emptyDir: no StorageClass or CSI driver; data is lost when the pod is
+      # replaced. Fine for a lab, not for data you care about.
+      set -- '--set' 'database.persistence.enabled=false'
+      ;;
+    pvc)
+      set -- '--set' 'database.persistence.enabled=true' \
+        '--set' "database.persistence.storageClassName=$EKS_STORAGE_CLASS"
+      ;;
+    external)
+      case "$component" in
+        catalog-service) host=${EKS_DB_HOST_CATALOG:-} ;;
+        orders-service) host=${EKS_DB_HOST_ORDERS:-} ;;
+        inventory-service) host=${EKS_DB_HOST_INVENTORY:-} ;;
+      esac
+      set -- '--set' 'database.deploy=false' '--set' "database.host=${host:-}"
+      ;;
+  esac
+  printf '%s\n' "$@"
 }
 
 ensure_secrets() {
+  if [ "$db_storage" = external ]; then
+    info 'Using an external database: expecting Secrets catalog-db-secret, orders-db-secret and inventory-db-secret to exist already'
+    for secret in catalog-db-secret orders-db-secret inventory-db-secret; do
+      kubectl -n "$namespace" get secret "$secret" >/dev/null 2>&1 \
+        || die "Secret $secret is missing; create it with username/password keys for your managed database."
+    done
+    return 0
+  fi
   python3 scripts/lab-secrets.py ensure --file "$secrets_file" \
     CATALOG_DB_PASSWORD ORDERS_DB_PASSWORD INVENTORY_DB_PASSWORD >/dev/null
   kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
@@ -108,11 +159,13 @@ helm_deploy() {
   reg=$(require_registry)
   check_repositories "$reg"
   prefix="$project-$environment-"
-  info "Deploying commit $revision from $reg"
+  info "Deploying commit $revision from $reg (database storage: $db_storage)"
   for component in catalog-service orders-service inventory-service; do
+    # shellcheck disable=SC2046
+    set -- $(database_args "$component")
     helm upgrade --install "$component" "helm/$component" --namespace "$namespace" --create-namespace \
       --set "image.repository=$reg/$prefix$component" --set "image.tag=$revision" \
-      --set-string image.pullPolicy=IfNotPresent --wait --timeout 10m
+      --set-string image.pullPolicy=IfNotPresent --wait --timeout 10m "$@"
   done
   # The frontend is the only public entry point.
   helm upgrade --install bookstore-frontend helm/frontend --namespace "$namespace" \
@@ -159,7 +212,7 @@ case "$action" in
     ;;
   deploy)
     kubeconfig
-    ensure_storage
+    validate_storage_config
     ensure_secrets
     helm_deploy
     kubectl -n "$namespace" rollout status deployment/catalog-service --timeout=600s
