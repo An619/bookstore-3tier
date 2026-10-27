@@ -146,7 +146,7 @@ pipeline {
 
         stage('Compose integration smoke test') {
             steps {
-                sh 'docker compose up --build -d'
+                sh 'COMPOSE_UP_LOG=compose-up.log sh scripts/compose-up.sh'
                 sh '''
                     set -eu
                     attempt=0
@@ -269,6 +269,7 @@ pipeline {
 
     post {
         always {
+            archiveArtifacts artifacts: 'compose-up.log', allowEmptyArchive: true
             sh 'docker image ls "$BACKEND_IMAGE" --format "{{.Repository}}:{{.Tag}}" || true'
             sh 'docker image ls "$FRONTEND_IMAGE" --format "{{.Repository}}:{{.Tag}}" || true'
             sh 'docker image ls "$CATALOG_IMAGE" --format "{{.Repository}}:{{.Tag}}" || true'

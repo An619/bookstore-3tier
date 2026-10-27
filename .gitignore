@@ -44,3 +44,7 @@ __pycache__/
 backups/
 *.dump
 *.dump.partial
+
+# Local lab credentials
+.env
+deploy/local/ci/.env

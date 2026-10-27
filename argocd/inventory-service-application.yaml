@@ -9,6 +9,10 @@ spec:
     repoURL: https://github.com/An619/bookstore-3tier.git
     targetRevision: main
     path: helm/inventory-service
+    helm:
+      releaseName: inventory-service
+      valueFiles:
+        - values.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: bookstore

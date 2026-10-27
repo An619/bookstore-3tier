@@ -46,6 +46,14 @@ cd frontend && npm ci && npm run dev
 Vite proxies domain APIs server-side to service ports 8081–8083; browsers use
 same-origin URLs. Kubernetes uses the same domain paths through Nginx.
 
+## Local Kubernetes lab
+
+`deploy/local/README.md` contains a disposable kind-based lab: local image
+build/load, generated database Secrets, Helm install or Argo CD sync, port-forward
+access and a smoke test. It also offers an optional Jenkins/SonarQube Compose
+stack for the pipeline (with an explicit host-Docker security warning). These
+commands run on your workstation and require Docker/kind/kubectl/Helm.
+
 ## Jenkins and SonarQube
 
 Use the root Jenkinsfile in a multibranch job. Agents need Java 21, Maven 3.9+,

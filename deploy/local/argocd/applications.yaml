@@ -1,0 +1,89 @@
+# LAB ONLY: automated sync is enabled so a disposable kind cluster converges
+# without extra CLI steps. Do not reuse this file for shared/production clusters.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bookstore-catalog-service
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/An619/bookstore-3tier.git
+    targetRevision: TARGET_REVISION
+    path: helm/catalog-service
+    helm:
+      releaseName: catalog-service
+      valueFiles: [values.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bookstore
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bookstore-orders-service
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/An619/bookstore-3tier.git
+    targetRevision: TARGET_REVISION
+    path: helm/orders-service
+    helm:
+      releaseName: orders-service
+      valueFiles: [values.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bookstore
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bookstore-inventory-service
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/An619/bookstore-3tier.git
+    targetRevision: TARGET_REVISION
+    path: helm/inventory-service
+    helm:
+      releaseName: inventory-service
+      valueFiles: [values.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bookstore
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bookstore-frontend
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/An619/bookstore-3tier.git
+    targetRevision: TARGET_REVISION
+    path: helm/frontend
+    helm:
+      releaseName: bookstore-frontend
+      valueFiles: [values.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bookstore
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]

@@ -82,7 +82,9 @@ jobs:
           test -s /tmp/inventory-rendered.yaml
 
       - name: Build and start microservices stack
-        run: docker compose up --build -d
+        env:
+          COMPOSE_UP_LOG: compose-up.log
+        run: sh scripts/compose-up.sh
 
       - name: Smoke test API and frontend proxy
         run: |
@@ -114,6 +116,14 @@ jobs:
         run: |
           sh scripts/database-backup.sh backups/ci
           sh scripts/database-restore-test.sh backups/ci
+
+      - name: Upload Compose diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compose-diagnostics
+          path: compose-up.log
+          if-no-files-found: ignore
 
       - name: Upload Maven test and coverage results
         if: always()
