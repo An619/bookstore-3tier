@@ -110,6 +110,11 @@ jobs:
       - name: Exercise demo order and stock compensation
         run: python3 scripts/smoke-test.py
 
+      - name: Verify service database backup and isolated restores
+        run: |
+          sh scripts/database-backup.sh backups/ci
+          sh scripts/database-restore-test.sh backups/ci
+
       - name: Upload Maven test and coverage results
         if: always()
         uses: actions/upload-artifact@v4

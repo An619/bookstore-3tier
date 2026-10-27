@@ -172,6 +172,8 @@ pipeline {
                     curl --fail --silent http://localhost:8080/api/inventory | grep -q "availableQuantity"
                 '''
                 sh 'python3 scripts/smoke-test.py'
+                sh 'sh scripts/database-backup.sh backups/ci'
+                sh 'sh scripts/database-restore-test.sh backups/ci'
             }
             post {
                 always {
