@@ -65,6 +65,37 @@ for chart in catalog-service orders-service inventory-service; do
     --set database.createSecret=true --set database.password=lab-only \
     --set resources.requests.memory=128Mi --set database.storage=1Gi
 done
+# Observability and authorization switches.
+for chart in catalog-service orders-service inventory-service; do
+  render "$chart-tracing" "helm/$chart" 'OTEL_SAMPLING_PROBABILITY' '' \
+    --set database.createSecret=true --set database.password=lab-only \
+    --set observability.tracing.endpoint=http://otel-collector.monitoring:4318/v1/traces \
+    --set observability.tracing.samplingProbability=0.1
+done
+# The lab must stay usable without an identity provider: no token requirement,
+# and no half-configured security block.
+for chart in catalog-service orders-service inventory-service; do
+  render "$chart-anonymous" "helm/$chart" '' 'SECURITY_JWT_ENABLED' \
+    --set database.createSecret=true --set database.password=lab-only
+done
+for chart in orders-service inventory-service; do
+  render "$chart-secured" "helm/$chart" 'SECURITY_JWT_ISSUER_URI' '' \
+    --set database.createSecret=true --set database.password=lab-only \
+    --set security.jwt.enabled=true \
+    --set security.jwt.issuerUri=https://issuer.example.com/realms/bookstore
+done
+# Managed PostgreSQL: TLS and pool limits reach the container.
+render orders-tls helm/orders-service 'sslmode=require' '' \
+  --set database.createSecret=true --set database.password=lab-only \
+  --set database.sslmode=require --set database.hikari.maximumPoolSize=25
+render orders-pool helm/orders-service 'SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE' ''
+# Checkout alerts are opt-in.
+render orders-alerts-on helm/orders-service 'CheckoutOutboxBacklog' '' \
+  --set database.createSecret=true --set database.password=lab-only \
+  --set alerts.enabled=true
+render orders-alerts-off helm/orders-service '' 'CheckoutOutboxBacklog' \
+  --set database.createSecret=true --set database.password=lab-only
+
 lint helm/frontend
 render frontend-default helm/frontend 'kind: Service' ''
 render frontend-nodeport helm/frontend 'nodePort: 30080' '' \

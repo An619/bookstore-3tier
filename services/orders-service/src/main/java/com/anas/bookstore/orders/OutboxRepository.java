@@ -7,4 +7,6 @@ public interface OutboxRepository extends JpaRepository<OutboxEvent, Long> {
     List<OutboxEvent> findTop20ByStatusOrderByIdAsc(String status);
 
     List<OutboxEvent> findByAggregateKey(String aggregateKey);
+
+    long countByStatus(String status);
 }

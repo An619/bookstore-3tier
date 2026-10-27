@@ -6,7 +6,14 @@ CI_LAB := sh deploy/local/ci/lab.sh
 
 .DEFAULT_GOAL := help
 
-.PHONY: help lab lab-light lab-ci lab-ci-run lab-url lab-status lab-logs lab-down eks-plan eks-apply eks-images eks-deploy eks-release eks-status eks-uninstall eks-destroy ci-status ci-run ci-down ci-reset test verify frontend preflight
+.PHONY: help migrate-legacy lab lab-light lab-ci lab-ci-run lab-url lab-status lab-logs lab-down eks-plan eks-apply eks-images eks-deploy eks-release eks-status eks-uninstall eks-destroy ci-status ci-run ci-down ci-reset test verify frontend preflight
+
+migrate-legacy: ## Copy legacy books into the catalog DB (dry run first: DRY=1)
+	@if [ "$(DRY)" = "1" ]; then \
+		python3 scripts/migrate-legacy.py --dry-run; \
+	else \
+		python3 scripts/migrate-legacy.py --apply; \
+	fi
 
 help: ## Show the available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)

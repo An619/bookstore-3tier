@@ -32,8 +32,29 @@ spec:
           env:
             - name: SERVER_PORT
               value: "8083"
+            # Distributed tracing: OTLP/HTTP export, sampling default 0 (off).
+            {{- if .Values.observability.tracing.endpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.observability.tracing.endpoint | quote }}
+            {{- end }}
+            - name: OTEL_SAMPLING_PROBABILITY
+              value: {{ .Values.observability.tracing.samplingProbability | quote }}
+            # JWT authorization. Disabled by default so the lab works without an
+            # identity provider; enabling it requires an issuer or JWKS URI.
+            {{- if .Values.security.jwt.enabled }}
+            - name: SECURITY_JWT_ENABLED
+              value: "true"
+            {{- if .Values.security.jwt.issuerUri }}
+            - name: SECURITY_JWT_ISSUER_URI
+              value: {{ .Values.security.jwt.issuerUri | quote }}
+            {{- end }}
+            {{- if .Values.security.jwt.jwkSetUri }}
+            - name: SECURITY_JWT_JWK_SET_URI
+              value: {{ .Values.security.jwt.jwkSetUri | quote }}
+            {{- end }}
+            {{- end }}
             - name: SPRING_DATASOURCE_URL
-              value: "jdbc:postgresql://{{ .Values.database.host }}:5432/{{ .Values.database.name }}"
+              value: "jdbc:postgresql://{{ .Values.database.host }}:5432/{{ .Values.database.name }}{{ if .Values.database.sslmode }}?sslmode={{ .Values.database.sslmode }}{{ end }}"
             - name: SPRING_DATASOURCE_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -44,6 +65,11 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.database.secretName }}
                   key: password
+            # Managed PostgreSQL in production: TLS and a bounded pool.
+            - name: SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE
+              value: {{ .Values.database.hikari.maximumPoolSize | quote }}
+            - name: SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT
+              value: {{ .Values.database.hikari.connectionTimeoutMs | quote }}
           startupProbe:
             httpGet:
               path: /actuator/health/liveness

@@ -15,6 +15,8 @@ import jakarta.persistence.Table;
 @Table(name = "checkout_outbox")
 public class OutboxEvent {
     public static final String RESERVE_STOCK = "RESERVE_STOCK";
+    /** Compensating event: give the reserved stock back after a failed checkout. */
+    public static final String RELEASE_STOCK = "RELEASE_STOCK";
     public static final String PENDING = "PENDING";
     public static final String DONE = "DONE";
     public static final String FAILED = "FAILED";

@@ -1,0 +1,47 @@
+{{- if .Values.alerts.enabled }}
+# Opt-in PrometheusRule. It needs the Prometheus Operator CRDs and must match
+# your Prometheus resource's ruleSelector labels (see alerts.labels).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: orders-service-checkout
+  labels:
+    {{- toYaml .Values.alerts.labels | nindent 4 }}
+spec:
+  groups:
+    - name: bookstore.checkout
+      rules:
+        - alert: CheckoutOutboxBacklog
+          expr: max_over_time(checkout_outbox_pending[10m]) > 20
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Checkout outbox is not draining
+            description: >-
+              The orders worker has had more than 20 queued checkouts for 10
+              minutes. Check the inventory service and the worker logs.
+            runbook_url: https://github.com/An619/bookstore-3tier/blob/main/docs/runbooks/checkout-reconciliation.md
+
+        - alert: CheckoutReconciliationStuck
+          expr: max_over_time(checkout_attempts_needs_reconciliation[15m]) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: Checkouts are stuck in reconciliation
+            description: >-
+              The reconciler could not settle a checkout for 15 minutes, which
+              usually means the inventory ledger is unreachable.
+            runbook_url: https://github.com/An619/bookstore-3tier/blob/main/docs/runbooks/checkout-reconciliation.md
+
+        - alert: BookstoreApiServerErrors
+          expr: sum by (service) (rate(http_server_requests_seconds_count{namespace="bookstore",status=~"5.."}[5m])) > 0.1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: A bookstore service is returning server errors
+            description: More than 0.1 server errors per second for 10 minutes.
+            runbook_url: https://github.com/An619/bookstore-3tier/blob/main/docs/runbooks/kubernetes-troubleshooting.md
+{{- end }}

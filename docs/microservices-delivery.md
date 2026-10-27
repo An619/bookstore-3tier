@@ -59,11 +59,137 @@ Worker settings (environment variables in Compose, Helm and EKS):
 | `CHECKOUT_RECONCILER_DELAY_MS` | `5000` | Delay between reconciliation batches |
 | `CHECKOUT_RECONCILER_MAX_CYCLES` | `3` | Re-queue rounds before cancelling |
 
-Remaining limits: this is still a **demo** workflow, not a production payment or
-saga implementation. There is no payment step, no authentication/authorization,
-no distributed tracing and no versioned migrations. Delivery is at-least-once
-and makes no ordering guarantee beyond per-event retries. Do not use it for real
+Delivery is at-least-once and the only ordering guarantee is per event. The
+opt-in payment, authorization and tracing pieces are described below; versioned
+schema migrations and a production PSP adapter remain out of scope, so this is
+still a **demo** workflow and not a payment product. Do not use it for real
 orders.
+
+### Payment authorization
+
+Payment is the second step of the checkout saga and is **off by default**
+(`payments.enabled=false` / `PAYMENTS_ENABLED`):
+
+1. the worker reserves stock (idempotency key `<checkout-key>:reserve`);
+2. it reads the unit price from the catalog service (server-side only - the
+   browser never supplies an amount) and multiplies by the quantity;
+3. it calls the `PaymentGateway` with `<checkout-key>:payment`;
+4. approved -> order `CONFIRMED`; declined -> order `CANCELLED`, attempt
+   `FAILED` (402) and a **durable** `RELEASE_STOCK` outbox event gives the stock
+   back. Provider errors retry with the same key, then go to reconciliation.
+
+There is no card data and no PSP integration in this repository: an adapter
+implements `PaymentGateway` (`authorize` must be idempotent, `find` must report
+what a key did). The reconciler asks the **payment record**, never the stock
+ledger, before confirming an order whose checkout timed out - money is never
+assumed. Enabling payments without a `PaymentGateway` bean fails at startup
+instead of accepting unpayable orders.
+
+`RELEASE_STOCK` events retry indefinitely on purpose: release is idempotent, so
+the worst case is a delayed compensation rather than a double release.
+
+### Authentication and authorization
+
+Orders and inventory accept a bearer token when `security.jwt.enabled=true`
+(`SECURITY_JWT_ENABLED`) with either `security.jwt.issuer-uri` (OIDC discovery)
+or `security.jwt.jwk-set-uri`. Scopes:
+
+| Scope | Grants |
+| --- | --- |
+| `orders.read` | `GET /api/orders*` |
+| `orders.write` | `POST /api/checkout`, `POST`/`DELETE /api/orders*` |
+| `inventory.read` | `GET /api/inventory*` |
+| `inventory.write` | reserve/release |
+
+Probes (`/actuator/health/**`), `/actuator/info` and `/actuator/prometheus` stay
+public so Kubernetes and Prometheus need no credentials; everything else is
+denied by default. A missing or invalid token is 401, a missing scope is 403.
+
+The default is **off** so `make lab` works without an identity provider, and the
+service logs a warning on every start while it is off. Enabling it without an
+issuer or JWKS URI fails at startup. The frontend forwards
+`sessionStorage.bookstoreToken` as `Authorization: Bearer ...` when present;
+issuing tokens is the identity provider's job - there is no login screen here.
+
+### Tracing, metrics and alerting
+
+- Each service exposes Micrometer/Prometheus metrics on `/actuator/prometheus`.
+- Distributed tracing uses Micrometer's OTLP bridge: set
+  `observability.tracing.endpoint` (Helm) or `OTEL_EXPORTER_OTLP_ENDPOINT`, and
+  `OTEL_SAMPLING_PROBABILITY` above `0` (default `0.0`) to record anything.
+  Incoming requests inherit W3C `traceparent`, so browser -> nginx -> orders ->
+  inventory is one trace.
+- The orders service exports the two numbers that matter for the checkout
+  pipeline: `checkout_outbox_pending` and
+  `checkout_attempts_needs_reconciliation`.
+- `alerts.enabled=true` (orders chart) renders a PrometheusRule with
+  `CheckoutOutboxBacklog`, `CheckoutReconciliationStuck` and
+  `BookstoreApiServerErrors`; the response procedure is
+  `docs/runbooks/checkout-reconciliation.md`.
+
+### Service discovery
+
+Discovery is Kubernetes-native: each chart creates a `ClusterIP` Service and the
+callers use its DNS name (`http://inventory-service:8083`,
+`http://catalog-service:8081`), resolved by CoreDNS inside the namespace.
+Nothing else is required - no registry, no sidecar.
+
+Cross-service URLs are configuration, never hard-coded, so the same images work
+in Compose, kind and EKS:
+
+| Variable | Default | Used by |
+| --- | --- | --- |
+| `INVENTORY_SERVICE_URL` | `http://inventory-service:8083` | orders worker |
+| `CATALOG_SERVICE_URL` | `http://catalog-service:8081` | orders payment step |
+| `SECURITY_JWT_ISSUER_URI` | empty | orders, inventory |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | local collector default | all services |
+
+A service mesh (mTLS, retries, traffic shifting) is deliberately **not**
+installed; if you add one, it replaces this DNS-based discovery and the
+NetworkPolicy layer, not the application configuration.
+
+### Production databases
+
+The charts default to a PostgreSQL StatefulSet for the lab. For production, set
+`database.deploy=false` and point the service at a managed instance:
+
+```sh
+helm upgrade --install orders-service helm/orders-service -n bookstore \
+  --set database.deploy=false \
+  --set database.host=bookstore.cluster-abc.ap-south-1.rds.amazonaws.com \
+  --set database.port=5432 --set database.name=ordersdb \
+  --set database.sslmode=require \
+  --set database.existingSecret=orders-db-secret \
+  --set database.hikari.maximumPoolSize=20
+```
+
+- `database.sslmode` is appended to the JDBC URL (`?sslmode=require`); use
+  `verify-full` with the provider CA when available.
+- `database.hikari.*` bounds the pool per pod: keep
+  `replicas x maximumPoolSize` below the server's connection limit.
+- The Secret must already exist (username/password keys); the chart never
+  creates credentials for an external database.
+- Services run with `ddl-auto=validate`, so a managed database must be created
+  with the schema in `database/*-init.sql` (applied by your migration tooling,
+  not at startup).
+- Managed providers give backups/PITR, failover and encryption; the scripts in
+  `scripts/database-backup.sh` are for the lab only. Follow
+  `docs/runbooks/postgres-backup-restore.md` for restore drills.
+
+### Legacy data migration
+
+The legacy Node API only owned a `books` table. `scripts/migrate-legacy.py`
+copies those rows into the catalog database:
+
+```sh
+python3 scripts/migrate-legacy.py --dry-run   # print the SQL and the row count
+python3 scripts/migrate-legacy.py --apply     # idempotent, single transaction
+```
+
+It matches on title+author, never updates or deletes catalog rows, refuses
+oversized or malformed legacy rows, and reports how many rows were inserted.
+Nothing is migrated for orders or inventory: those domains did not exist before
+the split.
 
 ### Consumer-driven contract tests
 

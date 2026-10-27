@@ -70,8 +70,13 @@ These are choices or credentials that a repository cannot supply:
    your Docker Hub or ECR credentials in Jenkins plus `PUBLISH_IMAGES`.
 3. **DNS and TLS.** Point a real host name at an ingress controller and supply a
    certificate; the example values use `bookstore.example.com`.
-4. **Authentication.** The app has no login. Do not expose it publicly before
-   adding authentication/authorization.
+4. **Authentication.** The app ships with JWT enforcement **off** so the lab
+   works without an identity provider. Before exposing it, set
+   `security.jwt.enabled=true` with an issuer or JWKS URI (orders and inventory
+   chart values) and hand clients a token with the documented scopes. There is
+   still no login UI: tokens come from your identity provider.
+5. **Payments.** `payments.enabled=false`. Turning it on requires a PSP adapter
+   implementing `PaymentGateway`; no card data is handled by these services.
 
 ## Troubleshooting
 

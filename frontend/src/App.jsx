@@ -1,10 +1,27 @@
 import { useCallback, useEffect, useState } from 'react';
 import './App.css';
 
-async function requestJson(url, options) {
-  const response = await fetch(url, options);
+// When the deployment enables JWT authorization, the browser presents the
+// token an identity provider issued. Without one (local lab) this is empty and
+// the services allow anonymous requests.
+function authorizationHeader() {
+  const token = sessionStorage.getItem('bookstoreToken');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function requestJson(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: { ...authorizationHeader(), ...(options.headers ?? {}) },
+  });
   const body = await response.json().catch(() => null);
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('Sign-in required: this deployment needs a bearer token.');
+    }
+    if (response.status === 403) {
+      throw new Error('Your token does not have the scope this action needs.');
+    }
     throw new Error(body?.message || body?.error || `Request failed (${response.status})`);
   }
   return body;

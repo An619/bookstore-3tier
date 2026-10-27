@@ -42,6 +42,9 @@ charts for a microservices-only cluster; `helm/bookstore` is the legacy chart.
 - Docker: multi-stage frontend build, non-root backend, unprivileged Nginx frontend, health checks and a private database network.
 - Kubernetes packaging: Helm charts for the legacy stack and the Catalog, Orders and Inventory services, each with a separate database workload, probes and resource/security settings.
 - Contract tests: `contracts/inventory-api.json` is verified by both the inventory provider and the orders consumer client, so a breaking rename fails both builds.
+- Checkout saga with an opt-in payment step: price read server-side from the catalog, a `PaymentGateway` SPI (no card data here), and a durable `RELEASE_STOCK` compensation when payment is declined.
+- Optional JWT authorization (`security.jwt.enabled`) with per-endpoint scopes, OTLP tracing with 0% sampling by default, checkout metrics and opt-in Prometheus alerts.
+- Legacy data migration script, managed-PostgreSQL settings (TLS + pool) and a service-discovery/configuration reference in the delivery doc.
 - GitOps starter: Argo CD Application configured for manual sync until environment values are reviewed.
 - Infrastructure as code starter: Terraform VPC, EKS managed node group and immutable ECR repositories.
 - Operations: security baseline, Kubernetes troubleshooting, deployment rollback and PostgreSQL backup/restore runbooks.

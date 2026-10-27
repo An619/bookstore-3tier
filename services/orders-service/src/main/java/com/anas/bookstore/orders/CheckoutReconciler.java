@@ -3,6 +3,7 @@ package com.anas.bookstore.orders;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -39,19 +40,25 @@ public class CheckoutReconciler {
     private final OutboxRepository outbox;
     private final OrdersRepository orders;
     private final InventoryClient inventory;
+    private final ObjectProvider<PaymentGateway> gateways;
     private final boolean enabled;
     private final int maxCycles;
+    private final boolean paymentsEnabled;
 
     public CheckoutReconciler(CheckoutAttemptRepository attempts, OutboxRepository outbox,
                               OrdersRepository orders, InventoryClient inventory,
+                              ObjectProvider<PaymentGateway> gateways,
                               @Value("${checkout.reconciler.enabled:true}") boolean enabled,
-                              @Value("${checkout.reconciler.max-cycles:3}") int maxCycles) {
+                              @Value("${checkout.reconciler.max-cycles:3}") int maxCycles,
+                              @Value("${payments.enabled:false}") boolean paymentsEnabled) {
         this.attempts = attempts;
         this.outbox = outbox;
         this.orders = orders;
         this.inventory = inventory;
+        this.gateways = gateways;
         this.enabled = enabled;
         this.maxCycles = maxCycles;
+        this.paymentsEnabled = paymentsEnabled;
     }
 
     @Scheduled(fixedDelayString = "${checkout.reconciler.delay-ms:5000}",
@@ -85,6 +92,12 @@ public class CheckoutReconciler {
             fail(attempt, null, "No outbox event to reconcile");
             return;
         }
+        if (paymentsEnabled) {
+            // With money involved, the payment record decides; the stock ledger
+            // alone must never confirm an order.
+            settlePayment(attempt, event.get());
+            return;
+        }
         Optional<InventoryClient.InventoryOperationRecord> recorded;
         try {
             recorded = inventory.findOperation(attempt.getIdempotencyKey() + RESERVATION_PREFIX);
@@ -103,6 +116,50 @@ public class CheckoutReconciler {
             return;
         }
         requeueOrCancel(attempt, event.get());
+    }
+
+    /**
+     * Settles an unresolved checkout from the payment record: captured means the
+     * order is real (stock was reserved before payment), declined means cancel and
+     * release, and no record means nothing was charged so a retry is safe.
+     */
+    private void settlePayment(CheckoutAttempt attempt, OutboxEvent event) {
+        PaymentGateway gateway = gateways.getIfAvailable();
+        if (gateway == null) {
+            log.warn("payments.enabled=true but no PaymentGateway is configured; deferring {}",
+                attempt.getIdempotencyKey());
+            return;
+        }
+        Optional<PaymentGateway.PaymentResult> payment;
+        try {
+            payment = gateway.find(attempt.getIdempotencyKey() + ":payment");
+        } catch (RuntimeException unavailable) {
+            log.info("Payment lookup deferred for {}: {}", attempt.getIdempotencyKey(),
+                unavailable.getMessage());
+            return;
+        }
+        if (payment.isEmpty()) {
+            // Nothing was charged, so retrying the checkout is safe.
+            requeueOrCancel(attempt, event);
+            return;
+        }
+        if (payment.get().status() == PaymentGateway.PaymentResult.Status.APPROVED) {
+            // Payment captured and stock reserved: the order is real.
+            confirm(attempt, event);
+            return;
+        }
+        // Charged nothing, declined: cancel and hand the stock back.
+        cancelAndRelease(attempt, event, "Payment declined: " + payment.get().message());
+    }
+
+    private void cancelAndRelease(CheckoutAttempt attempt, OutboxEvent event, String reason) {
+        fail(attempt, event, reason);
+        boolean alreadyQueued = outbox.findByAggregateKey(attempt.getIdempotencyKey()).stream()
+            .anyMatch(queued -> OutboxEvent.RELEASE_STOCK.equals(queued.getEventType()));
+        if (!alreadyQueued) {
+            outbox.save(new OutboxEvent(attempt.getIdempotencyKey(), OutboxEvent.RELEASE_STOCK,
+                event.getBookId(), event.getQuantity()));
+        }
     }
 
     private void requeueOrCancel(CheckoutAttempt attempt, OutboxEvent event) {

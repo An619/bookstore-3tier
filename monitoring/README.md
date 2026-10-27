@@ -55,6 +55,41 @@ that value the API NetworkPolicies block scraping.
 Metrics are not persisted here: retention, long-term storage, dashboards and
 alert routing must be configured in your monitoring stack.
 
+## Checkout pipeline metrics and alerts
+
+The orders service exports two gauges for the asynchronous checkout:
+
+- `checkout_outbox_pending` - queued outbox events;
+- `checkout_attempts_needs_reconciliation` - checkouts the reconciler has not
+  settled.
+
+`helm/orders-service` can render a PrometheusRule for them
+(`--set alerts.enabled=true`, labels in `alerts.labels`):
+
+```sh
+helm upgrade --install orders-service helm/orders-service -n bookstore \
+  --set alerts.enabled=true
+```
+
+`CheckoutOutboxBacklog`, `CheckoutReconciliationStuck` and
+`BookstoreApiServerErrors` follow the procedure in
+`docs/runbooks/checkout-reconciliation.md`.
+
+## Distributed tracing
+
+All three services include Micrometer's OTLP bridge. Set an endpoint and a
+sampling probability above zero to export traces:
+
+```sh
+helm upgrade --install orders-service helm/orders-service -n bookstore \
+  --set observability.tracing.endpoint=http://otel-collector.monitoring:4318/v1/traces \
+  --set observability.tracing.samplingProbability=0.1
+```
+
+`traceparent` is propagated through nginx, orders and inventory, so one trace
+covers the whole checkout. Ingestion, storage and retention belong to your
+tracing backend.
+
 ## What to monitor
 - Deployment availability, pod restarts, CPU/memory saturation and pending PVCs.
 - API liveness/readiness, HTTP error rate and JVM/HTTP metrics from `/actuator/prometheus`.

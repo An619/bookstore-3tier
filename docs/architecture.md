@@ -19,7 +19,9 @@ Docker Compose provides a repeatable local environment. PostgreSQL uses a named 
 ## Production gaps to close
 - Replace local-only credentials with a proper secrets solution.
 - Keep PostgreSQL private in cloud deployments.
-- Add automated API tests, migrations, structured logs and request metrics.
+- Versioned database migrations (the services validate their schema at startup).
+- Replace the stubbed payment step with a PSP adapter and reconciliation against
+  the provider's ledger.
 - Define and test database backup/restore and recovery objectives.
 - Set resource sizing, availability targets, alert thresholds and rollback policy.
 - Add TLS, ingress restrictions, image scanning and least-privilege IAM/RBAC.

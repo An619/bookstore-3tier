@@ -25,6 +25,13 @@ database:
     # do not want EBS volumes.
     storageClassName: ""
   image: postgres:16-alpine
+  # Managed PostgreSQL: set TLS (e.g. "require") and pool limits. The charts
+  # still create no database pods when deploy=false; point host at RDS/Aurora/
+  # Cloud SQL and reference an externally managed Secret.
+  sslmode: ""
+  hikari:
+    maximumPoolSize: 10
+    connectionTimeoutMs: 30000
 resources:
   requests:
     cpu: 100m
@@ -56,3 +63,9 @@ serviceMonitor:
   # Must match your Prometheus resource's serviceMonitorSelector labels.
   labels:
     release: kube-prometheus-stack
+observability:
+  tracing:
+    # OTLP/HTTP endpoint, e.g. http://otel-collector.monitoring:4318/v1/traces.
+    # Empty = tracing stays local (sampling 0), nothing is exported.
+    endpoint: ""
+    samplingProbability: 0.0
