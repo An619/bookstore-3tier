@@ -6,7 +6,7 @@ CI_LAB := sh deploy/local/ci/lab.sh
 
 .DEFAULT_GOAL := help
 
-.PHONY: help lab lab-light lab-ci lab-ci-run lab-url lab-status lab-logs lab-down eks-plan eks-apply eks-images eks-deploy eks-release eks-status eks-destroy ci-status ci-run ci-down ci-reset test verify frontend preflight
+.PHONY: help lab lab-light lab-ci lab-ci-run lab-url lab-status lab-logs lab-down eks-plan eks-apply eks-images eks-deploy eks-release eks-status eks-uninstall eks-destroy ci-status ci-run ci-down ci-reset test verify frontend preflight
 
 help: ## Show the available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -68,6 +68,9 @@ eks-release: ## Write a reviewed Argo CD manifest for the pushed commit
 
 eks-status: ## Show pods and the frontend load-balancer address
 	sh scripts/eks.sh status
+
+eks-uninstall: ## Remove Helm releases and the load balancer (run before eks-destroy)
+	sh scripts/eks.sh uninstall
 
 eks-destroy: ## Destroy the EKS cluster and all data (asks for confirmation)
 	sh scripts/eks.sh destroy

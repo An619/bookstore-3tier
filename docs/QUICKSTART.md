@@ -54,7 +54,9 @@ creates the `bookstore-pipeline` job. Then run `make ci-run` to execute it.
    `make eks-plan`, `eks-apply`, `eks-images`, `eks-deploy`, `eks-status`, and
    `eks-destroy` when finished. No EBS is required: the default
    `EKS_DB_STORAGE=ephemeral` runs the databases without volumes, and `pvc` or
-   `external` give you durable options.
+   `external` give you durable options. The AWS bill (EKS control plane, nodes,
+   NAT gateway, load balancer) is itemised in `docs/aws-costs.md` — budget roughly
+   $190-205/month if you leave the default lab running, ~$0.26/hour.
 
 ## Things you still have to decide
 

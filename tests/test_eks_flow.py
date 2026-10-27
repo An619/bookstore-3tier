@@ -37,6 +37,8 @@ echo "kubectl $*" >> "$EKS_TEST_LOG"
 case "$*" in
   *"get storageclass"*) echo true ;;
   *"get secret"*) [ -f "$EKS_TEST_SECRETS" ] && exit 0; exit 1 ;;
+  # The frontend Service disappears once the Helm release is uninstalled.
+  *"get service bookstore-frontend"*) exit 1 ;;
 esac
 exit 0
 '''
@@ -234,6 +236,23 @@ exit 0
 
     def test_terraform_paths_are_overridable_for_testing(self):
         self.assertIn('EKS_TF_DIR', (ROOT / 'scripts/eks.sh').read_text())
+
+    def test_uninstall_removes_releases_and_waits_for_the_load_balancer(self):
+        result = self.run_eks('uninstall')
+        self.assertIn(result.returncode, (0,))
+        calls = '\n'.join(self.calls())
+        for release in ('bookstore-frontend', 'catalog-service', 'orders-service', 'inventory-service'):
+            self.assertIn(f'helm uninstall {release}', calls)
+        self.assertIn('service bookstore-frontend', calls)
+
+    def test_uninstall_is_safe_without_workloads(self):
+        # The kubectl fake returns failure for "get deploy" unless the marker exists.
+        kubectl = self.bin / 'kubectl'
+        kubectl.write_text('#!/bin/sh\necho "kubectl $*" >> "$EKS_TEST_LOG"\nexit 1\n')
+        result = self.run_eks('uninstall')
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn('No workloads found', result.stdout)
+        self.assertFalse(any('helm uninstall' in c for c in self.calls()))
 
     def test_destroy_requires_exact_confirmation(self):
         result = self.run_eks('destroy', stdin='yes\n')

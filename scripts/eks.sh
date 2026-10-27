@@ -8,6 +8,7 @@
 #   sh scripts/eks.sh deploy    # helm upgrade --install from ECR images
 #                               # database storage: EKS_DB_STORAGE=ephemeral (default) | pvc | external
 #   sh scripts/eks.sh release   # write a reviewed Argo CD manifest for this SHA
+#   sh scripts/eks.sh uninstall # remove Helm releases + the load balancer (run before destroy)
 #   sh scripts/eks.sh status    # cluster, pods and the frontend address
 #   sh scripts/eks.sh destroy   # terraform destroy (asks you to type a confirmation)
 #
@@ -235,6 +236,30 @@ case "$action" in
     kubectl -n "$namespace" get service bookstore-frontend \
       -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}' 2>/dev/null || true
     ;;
+  uninstall)
+    kubeconfig
+    if ! kubectl -n "$namespace" get deploy >/dev/null 2>&1; then
+      info "No workloads found in namespace $namespace (already removed)"
+      exit 0
+    fi
+    need helm
+    for release in bookstore-frontend inventory-service orders-service catalog-service; do
+      if helm status "$release" --namespace "$namespace" >/dev/null 2>&1; then
+        info "Uninstalling $release"
+        helm uninstall "$release" --namespace "$namespace" --wait --timeout 5m || true
+      fi
+    done
+    # A LoadBalancer Service can leave an ELB behind for a short time after
+    # deletion; wait so terraform destroy does not orphan paid resources.
+    attempt=1
+    while kubectl -n "$namespace" get service bookstore-frontend >/dev/null 2>&1; do
+      [ "$attempt" -ge 30 ] && { info 'frontend Service still deleting; check the AWS console for a leftover ELB'; break; }
+      attempt=$((attempt + 1))
+      sleep 10
+    done
+    info 'Workloads removed. Next: sh scripts/eks.sh destroy'
+    ;;
+
   destroy)
     need terraform
     printf 'Type %s to destroy the %s cluster and ALL of its data: ' "$cluster" "$cluster"

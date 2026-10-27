@@ -14,7 +14,8 @@ Only Docker, `git`, `python3` and `curl` are required: `kind` is downloaded
 
 - Browser VM practice: [docs/killercoda.md](docs/killercoda.md) (`make lab-light`)
 - AWS: [docs/eks.md](docs/eks.md) (`make eks-plan`, `eks-apply`, `eks-images`,
-  `eks-deploy`, `eks-destroy`)
+  `eks-deploy`, `eks-uninstall`, `eks-destroy`); costs are listed in
+  [docs/aws-costs.md](docs/aws-costs.md)
 
 See [docs/QUICKSTART.md](docs/QUICKSTART.md) for the short version and
 [Microservices build and delivery](docs/microservices-delivery.md) for the

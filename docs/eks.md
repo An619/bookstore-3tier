@@ -15,7 +15,9 @@ destroy everything when finished.
 | Install workloads | `make eks-deploy` | gp3 StorageClass, database Secrets, Helm releases from ECR |
 | Reviewed GitOps manifest | `make eks-release` | Writes `deploy/releases/bookstore-lab.json` for Argo CD |
 | Check | `make eks-status` | Pods plus the frontend load-balancer hostname |
+| Remove workloads | `make eks-uninstall` | Uninstalls Helm releases and waits for the load balancer to go |
 | Tear down | `make eks-destroy` | Terraform destroy; type the cluster name to confirm |
+| What costs money | `docs/aws-costs.md` | Every billable service, and what is free |
 
 Requirements: `aws` (configured credentials), `terraform`, `kubectl`, `helm`,
 `docker`, `git`, `python3`. `make eks-apply` refuses to run without
@@ -142,8 +144,13 @@ cluster. Note that a private ECR registry needs pull permission for the nodes
 
 `make eks-destroy` removes the VPC, NAT gateway, nodes, cluster and ECR
 repositories. If you stop midway, run it anyway: a forgotten NAT gateway or node
-group keeps billing. ECR images are deleted with the repositories, so re-push
-after recreating.
+group keeps billing.
+
+Order matters: run `make eks-uninstall` **first** so the frontend load balancer is
+deleted, then `make eks-destroy`. Destroying the cluster first can leave an
+orphaned ELB billing until it is cleaned up manually. Destroy also stops if the
+ECR repositories still contain images (`force_delete = false`): empty them, then
+re-run. See `docs/aws-costs.md` for the complete cost breakdown.
 
 ## Troubleshooting
 
