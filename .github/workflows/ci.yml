@@ -121,7 +121,14 @@ jobs:
       - name: Build and start microservices stack
         env:
           COMPOSE_UP_LOG: compose-up.log
-        run: sh scripts/compose-up.sh
+        run: |
+          if ! sh scripts/compose-up.sh; then
+            # The full log is an artifact, but annotations are readable from the
+            # API, so surface the most useful lines inline before failing.
+            grep -E "ERROR|Error|error|Exception|failed|FAILURE" compose-up.log \
+              | tail -n 8 | sed 's/^/::error::/' || true
+            exit 1
+          fi
 
       - name: Smoke test API and frontend proxy
         run: |

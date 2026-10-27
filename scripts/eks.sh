@@ -202,7 +202,12 @@ case "$action" in
       name=${component%%:*}; path=${component#*:}
       image="$reg/$prefix$name:$revision"
       info "Building $image"
-      docker build -q -t "$image" "$path" >/dev/null
+      if [ "$name" = frontend ]; then
+        docker build -q -t "$image" "$path" >/dev/null
+      else
+        # Root context: the Maven build also verifies contracts/.
+        docker build -q -t "$image" -f "$path/Dockerfile" . >/dev/null
+      fi
       docker push "$image" >/dev/null
     done
     info "Pushed 4 images tagged $revision"

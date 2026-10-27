@@ -90,6 +90,12 @@ curl -f http://localhost:8080/api/orders
 curl -f http://localhost:8080/api/inventory
 ```
 
+Images for the three Java services build from the **repository root**
+(`docker build -f services/<name>/Dockerfile .`) because their Maven build also
+verifies `contracts/`, which lives outside the service directory. The frontend
+keeps its own context. `docker compose build` and the `make lab` / `eks-images`
+targets already pass the right context, so nothing to do by hand.
+
 The default stack is frontend, three services and three databases. The old Node
 API and its database are available only with `docker compose --profile legacy
 up --build -d`; legacy endpoints are direct on port 5000, not routed by Nginx.

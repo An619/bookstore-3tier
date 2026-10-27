@@ -98,9 +98,9 @@ pipeline {
             steps {
                 sh 'docker build -t $BACKEND_IMAGE:$IMAGE_TAG ./backend'
                 sh 'docker build -t $FRONTEND_IMAGE:$IMAGE_TAG ./frontend'
-                sh 'docker build -t $CATALOG_IMAGE:$IMAGE_TAG ./services/catalog-service'
-                sh 'docker build -t $ORDERS_IMAGE:$IMAGE_TAG ./services/orders-service'
-                sh 'docker build -t $INVENTORY_IMAGE:$IMAGE_TAG ./services/inventory-service'
+                sh 'docker build -t $CATALOG_IMAGE:$IMAGE_TAG -f ./services/catalog-service/Dockerfile .'
+                sh 'docker build -t $ORDERS_IMAGE:$IMAGE_TAG -f ./services/orders-service/Dockerfile .'
+                sh 'docker build -t $INVENTORY_IMAGE:$IMAGE_TAG -f ./services/inventory-service/Dockerfile .'
             }
         }
 

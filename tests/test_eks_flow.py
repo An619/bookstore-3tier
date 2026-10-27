@@ -102,7 +102,12 @@ class EksFlowTest(unittest.TestCase):
                            ('orders-service', 'services/orders-service'),
                            ('inventory-service', 'services/inventory-service')):
             image = f'{registry}/bookstore-lab-{name}:{self.revision()}'
-            self.assertIn(f'docker build -q -t {image} {path}', calls)
+            if name == 'frontend':
+                self.assertIn(f'docker build -q -t {image} {path}', calls)
+            else:
+                # The Java services build from the repository root so that the
+                # Maven build can verify contracts/.
+                self.assertIn(f'docker build -q -t {image} -f {path}/Dockerfile .', calls)
             self.assertIn(f'docker push {image}', calls)
 
     def test_images_fail_clearly_without_aws_credentials(self):

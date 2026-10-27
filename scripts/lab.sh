@@ -123,7 +123,9 @@ build_images() {
   lab_info 'Building images from this working tree'
   docker build -q -t bookstore-frontend:local frontend >/dev/null
   for service in catalog orders inventory; do
-    docker build -q -t "bookstore-$service-service:local" "services/$service-service" >/dev/null
+    # Root context: the Maven build also verifies contracts/.
+    docker build -q -t "bookstore-$service-service:local" \
+      -f "services/$service-service/Dockerfile" . >/dev/null
   done
 }
 

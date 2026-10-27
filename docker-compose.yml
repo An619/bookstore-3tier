@@ -95,7 +95,9 @@ services:
     restart: unless-stopped
 
   orders-service:
-    build: ./services/orders-service
+    build:
+      context: .
+      dockerfile: services/orders-service/Dockerfile
     image: bookstore-orders-service:local
     environment:
       SERVER_PORT: "8082"
@@ -118,7 +120,9 @@ services:
     restart: unless-stopped
 
   inventory-service:
-    build: ./services/inventory-service
+    build:
+      context: .
+      dockerfile: services/inventory-service/Dockerfile
     image: bookstore-inventory-service:local
     environment:
       SERVER_PORT: "8083"
@@ -140,7 +144,9 @@ services:
     restart: unless-stopped
 
   catalog-service:
-    build: ./services/catalog-service
+    build:
+      context: .
+      dockerfile: services/catalog-service/Dockerfile
     image: bookstore-catalog-service:local
     environment:
       SERVER_PORT: "8081"
