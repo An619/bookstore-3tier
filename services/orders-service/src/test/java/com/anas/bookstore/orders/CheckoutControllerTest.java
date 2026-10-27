@@ -75,7 +75,7 @@ class CheckoutControllerTest {
 
     @Test void replaysWithoutReservingOrDuplicating() throws Exception {
         var first = checkout("order-key-0002").andExpect(status().isCreated()).andReturn();
-        Long firstId = com.jayway.jsonpath.JsonPath.read(
+        Number firstId = com.jayway.jsonpath.JsonPath.read(
             first.getResponse().getContentAsString(), "$.id");
         int callsAfterFirst = INVENTORY.calls().size();
 

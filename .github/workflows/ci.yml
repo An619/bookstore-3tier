@@ -46,7 +46,15 @@ jobs:
           cache: maven
 
       - name: Verify all Maven microservices and coverage
-        run: mvn -B -ntp verify
+        run: |
+          set +e
+          mvn -B -ntp verify > /tmp/maven.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            grep -E "(ERROR|BUILD FAILURE|Tests run)" /tmp/maven.log | head -60 | sed 's/^/::error::/'
+            tail -n 40 /tmp/maven.log
+          fi
+          exit "$status"
 
       - name: Test GitOps release generation
         run: python3 -m unittest discover -s tests -v
