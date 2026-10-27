@@ -3,6 +3,7 @@ package com.anas.bookstore.inventory;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -61,8 +62,9 @@ class SecurityConfigTest {
     }
 
     /**
-     * Probes and metrics must never need a credential. Endpoint availability is
-     * asserted separately (a DOWN health assessment is still a 503, not a 401).
+     * Probes and metrics must never need a credential. Whether an endpoint is
+     * exposed at all is configuration; the Compose smoke test scrapes
+     * /actuator/prometheus on the real container.
      */
     @Test
     void probesAndMetricsRequireNoCredentials() throws Exception {
@@ -71,7 +73,7 @@ class SecurityConfigTest {
             int status = statusOf(path);
             assertNotEquals(401, status, path + " must not require a token");
             assertNotEquals(403, status, path + " must not require a scope");
-            assertNotEquals(404, status, path + " must be exposed");
         }
+        assertEquals(200, statusOf("/actuator/health"));
     }
 }
