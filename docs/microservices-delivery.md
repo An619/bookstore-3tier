@@ -191,3 +191,25 @@ container registry credentials, Kubernetes context, DNS zone or certificate
 issuer. Those cannot be provisioned or verified just by editing the repository.
 Use the configuration steps above in an authorized environment. No public
 exposure, cloud resources, or deployment is performed automatically.
+
+## Reconciling interrupted checkouts
+
+`checkout_attempts` never hides a possible double effect. Inspect unresolved
+attempts in the orders database (read-only query):
+
+```sql
+SELECT idempotency_key, order_id, status, response_status, message
+FROM checkout_attempts
+WHERE status IN ('PENDING', 'NEEDS_RECONCILIATION')
+ORDER BY idempotency_key;
+```
+
+For each row, compare the inventory service's stock with the expected value and
+decide whether stock must be released or an order recorded. Then resolve the row
+manually (for example set `status = 'FAILED'` after releasing stock, or attach the
+confirmed `order_id` and set `status = 'COMPLETED'`). There is **no** automation
+for this; it is an operator action. A `PENDING` row means a checkout request did
+not finish (for example the pod was killed) - confirm what the inventory service
+actually did before retrying with the same key.
+
+This limitation is why the demo is not suitable for real payments.
