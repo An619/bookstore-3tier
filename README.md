@@ -30,7 +30,7 @@ charts for a microservices-only cluster; `helm/bookstore` is the legacy chart.
 - **Catalog domain:** Java 21 + Spring Boot Catalog Service with its own PostgreSQL database.
 - **Orders domain:** Java 21 + Spring Boot Orders Service with its own PostgreSQL database and order API.
 - **Inventory domain:** Java 21 + Spring Boot Inventory Service with its own PostgreSQL database, stock query, reserve and release endpoints.
-- **Checkout:** the orders service owns `POST /api/checkout`; it reserves stock, creates the order, compensates on failure and rejects duplicate retries via an `Idempotency-Key` header.
+- **Checkout:** the orders service owns `POST /api/checkout`. It writes the order, the idempotency record and an outbox event in one transaction, answers **202**, and a background worker reserves stock through `Idempotency-Key`-guarded inventory calls. `Idempotency-Key` (8-48 chars) makes retries and lost responses safe, and a reconciler settles unresolved attempts from the inventory ledger without an operator. See [asynchronous checkout](docs/microservices-delivery.md#asynchronous-checkout-transactional-outbox).
 - **Legacy API:** Node.js + Express is retained under the optional `legacy` Compose profile, on direct port 5000 only.
 - **Data tier:** PostgreSQL.
 - **Local runtime:** Docker Compose with health-gated dependencies and a persistent development database volume.
@@ -41,6 +41,7 @@ charts for a microservices-only cluster; `helm/bookstore` is the legacy chart.
 - Jenkins declarative pipeline: Node and Maven validation, image build, Compose smoke test, Helm checks, optional SonarQube and Trivy stages, optional commit-tagged Docker Hub/ECR publishing for all application images.
 - Docker: multi-stage frontend build, non-root backend, unprivileged Nginx frontend, health checks and a private database network.
 - Kubernetes packaging: Helm charts for the legacy stack and the Catalog, Orders and Inventory services, each with a separate database workload, probes and resource/security settings.
+- Contract tests: `contracts/inventory-api.json` is verified by both the inventory provider and the orders consumer client, so a breaking rename fails both builds.
 - GitOps starter: Argo CD Application configured for manual sync until environment values are reviewed.
 - Infrastructure as code starter: Terraform VPC, EKS managed node group and immutable ECR repositories.
 - Operations: security baseline, Kubernetes troubleshooting, deployment rollback and PostgreSQL backup/restore runbooks.

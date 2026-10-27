@@ -1,22 +1,14 @@
 package com.anas.bookstore.orders;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.sun.net.httpserver.HttpServer;
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,36 +19,48 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 
+/**
+ * Checkout is asynchronous: the request records the order + outbox event and
+ * returns 202, then {@link CheckoutWorker} reserves stock and confirms or
+ * cancels the order. These tests drive the worker explicitly
+ * (checkout.worker.enabled=false in application-test.properties).
+ */
 @SpringBootTest @AutoConfigureMockMvc @ActiveProfiles("test")
 class CheckoutControllerTest {
     private static final String BODY =
         "{\"customerName\":\"Checkout Customer\",\"bookId\":1,\"quantity\":2}";
 
-    // Started at class initialisation so it exists before the Spring context.
     static final InventoryStub INVENTORY = InventoryStub.start();
 
     @DynamicPropertySource
-    static void inventoryProperties(DynamicPropertyRegistry registry) {
+    static void properties(DynamicPropertyRegistry registry) {
         registry.add("inventory.service.url", INVENTORY::baseUrl);
+        // Each test class owns a database: a second Spring context must not drop
+        // the schema another context is still using.
+        registry.add("spring.datasource.url",
+            () -> "jdbc:h2:mem:orders-checkout;MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
     }
 
     @Autowired MockMvc mvc;
     @Autowired OrdersRepository orders;
     @Autowired CheckoutAttemptRepository attempts;
+    @Autowired OutboxRepository outbox;
+    @Autowired CheckoutWorker worker;
 
     private long baselineOrders;
 
     @BeforeEach
     void reset() {
         INVENTORY.reset();
-        // Other test classes share this in-memory database and its seed row, so
-        // compare against a baseline instead of deleting orders.
+        // Other test classes share this in-memory database and its seed row.
         attempts.deleteAll();
+        outbox.deleteAll();
         baselineOrders = orders.count();
     }
 
-    private org.springframework.test.web.servlet.ResultActions checkout(String key) throws Exception {
+    private ResultActions checkout(String key) throws Exception {
         var request = post("/api/checkout").contentType(MediaType.APPLICATION_JSON).content(BODY);
         if (key != null) {
             request = request.header("Idempotency-Key", key);
@@ -64,140 +68,162 @@ class CheckoutControllerTest {
         return mvc.perform(request);
     }
 
-    @Test void reservesStockAndCreatesOrder() throws Exception {
-        checkout("order-key-0001")
-            .andExpect(status().isCreated())
-            .andExpect(header().string("Idempotency-Replayed", "false"))
-            .andExpect(jsonPath("$.status").value("CREATED"));
-        assertEquals(List.of("POST /api/inventory/1/reserve?quantity=2"), INVENTORY.calls());
-        assertEquals(baselineOrders + 1, orders.count());
+    private long orderIdFor(String key) {
+        return attempts.findById(key).orElseThrow().getOrderId();
     }
 
-    @Test void replaysWithoutReservingOrDuplicating() throws Exception {
-        var first = checkout("order-key-0002").andExpect(status().isCreated()).andReturn();
-        Number firstId = com.jayway.jsonpath.JsonPath.read(
-            first.getResponse().getContentAsString(), "$.id");
+    private String statusOf(long orderId) {
+        return orders.findById(orderId).orElseThrow().getStatus();
+    }
+
+    @Test
+    void acceptsAndQueuesTheReservation() throws Exception {
+        checkout("checkout-key-0001")
+            .andExpect(status().isAccepted())
+            .andExpect(header().string("Idempotency-Replayed", "false"))
+            .andExpect(jsonPath("$.status").value(OrderRecord.PENDING));
+
+        assertEquals(baselineOrders + 1, orders.count());
+        assertEquals(OrderRecord.PENDING, statusOf(orderIdFor("checkout-key-0001")));
+        assertEquals(1, outbox.findByAggregateKey("checkout-key-0001").size());
+        assertEquals(OutboxEvent.PENDING,
+            outbox.findByAggregateKey("checkout-key-0001").get(0).getStatus());
+        // Nothing has been reserved yet: the worker has not run.
+        assertTrue(INVENTORY.calls().isEmpty(), "checkout must not call inventory inline");
+    }
+
+    @Test
+    void workerConfirmsTheOrderAndReservesStockOnce() throws Exception {
+        checkout("checkout-key-0002").andExpect(status().isAccepted());
+        long orderId = orderIdFor("checkout-key-0002");
+
+        assertEquals(1, worker.processPending());
+
+        assertEquals(OrderRecord.CONFIRMED, statusOf(orderId));
+        assertEquals(CheckoutAttempt.COMPLETED, attempts.findById("checkout-key-0002").orElseThrow().getStatus());
+        assertEquals(OutboxEvent.DONE, outbox.findByAggregateKey("checkout-key-0002").get(0).getStatus());
+        assertEquals(List.of("POST /api/inventory/1/reserve?quantity=2"), INVENTORY.calls());
+        assertEquals("checkout-key-0002:reserve", INVENTORY.idempotencyKeys().get(0));
+    }
+
+    @Test
+    void replayReturnsTheSameOrderWithoutReservingAgain() throws Exception {
+        checkout("checkout-key-0003").andExpect(status().isAccepted());
+        worker.processPending();
+        long orderId = orderIdFor("checkout-key-0003");
         int callsAfterFirst = INVENTORY.calls().size();
 
-        checkout("order-key-0002")
-            .andExpect(status().isCreated())
+        checkout("checkout-key-0003")
+            .andExpect(status().isAccepted())
             .andExpect(header().string("Idempotency-Replayed", "true"))
-            .andExpect(jsonPath("$.id").value(firstId));
+            .andExpect(jsonPath("$.id").value(orderId))
+            .andExpect(jsonPath("$.status").value(OrderRecord.CONFIRMED));
+
+        assertEquals(baselineOrders + 1, orders.count());
+        assertEquals(1, outbox.findByAggregateKey("checkout-key-0003").size());
         assertEquals(callsAfterFirst, INVENTORY.calls().size());
+    }
+
+    @Test
+    void insufficientStockCancelsTheOrder() throws Exception {
+        INVENTORY.respondWith(409);
+        checkout("checkout-key-0004").andExpect(status().isAccepted());
+        long orderId = orderIdFor("checkout-key-0004");
+
+        worker.processPending();
+
+        assertEquals(OrderRecord.CANCELLED, statusOf(orderId));
+        CheckoutAttempt attempt = attempts.findById("checkout-key-0004").orElseThrow();
+        assertEquals(CheckoutAttempt.FAILED, attempt.getStatus());
+        assertEquals(409, attempt.getResponseStatus().intValue());
+        assertEquals("Insufficient stock", attempt.getMessage());
+        assertEquals(OutboxEvent.DONE, outbox.findByAggregateKey("checkout-key-0004").get(0).getStatus());
+
+        // A replay of a failed checkout keeps the original outcome and creates nothing.
+        checkout("checkout-key-0004").andExpect(status().isConflict());
         assertEquals(baselineOrders + 1, orders.count());
     }
 
-    @Test void insufficientStockCreatesNoOrder() throws Exception {
-        INVENTORY.respondWith(409);
-        checkout("order-key-0003")
-            .andExpect(status().isConflict())
-            .andExpect(jsonPath("$.error").value("Insufficient stock"));
-        assertEquals(baselineOrders, orders.count());
-        assertEquals(CheckoutAttempt.FAILED, attempts.findById("order-key-0003").orElseThrow().getStatus());
-    }
-
-    @Test void unknownBookReturnsNotFound() throws Exception {
-        INVENTORY.respondWith(404);
-        checkout("order-key-0004").andExpect(status().isNotFound());
-        assertEquals(baselineOrders, orders.count());
-    }
-
-    @Test void inventoryFailureReleasesStock() throws Exception {
-        INVENTORY.respondWith(500);
-        checkout("order-key-0005")
-            .andExpect(status().isBadGateway())
-            .andExpect(jsonPath("$.error").value("Inventory reservation failed; stock state is unconfirmed"));
-        assertTrue(INVENTORY.calls().contains("POST /api/inventory/1/release?quantity=2"));
-        assertEquals(baselineOrders, orders.count());
-    }
-
-    @Test void failedReleaseNeedsReconciliationAndBlocksRetries() throws Exception {
+    @Test
+    void transientFailuresAreRetriedUntilTheySucceed() throws Exception {
         INVENTORY.respondWith(500);
         INVENTORY.respondWith(500);
-        checkout("order-key-0006").andExpect(status().isBadGateway());
+        checkout("checkout-key-0005").andExpect(status().isAccepted());
+        long orderId = orderIdFor("checkout-key-0005");
+
+        worker.processPending();
+        assertEquals(OrderRecord.PENDING, statusOf(orderId));
+        assertEquals(OutboxEvent.PENDING, outbox.findByAggregateKey("checkout-key-0005").get(0).getStatus());
+
+        worker.processPending();
+        assertEquals(OrderRecord.PENDING, statusOf(orderId));
+
+        worker.processPending();
+        assertEquals(OrderRecord.CONFIRMED, statusOf(orderId));
+        assertEquals(3, INVENTORY.calls().size());
+        // Every retry reused the same key, so inventory can deduplicate.
+        assertEquals(1, INVENTORY.idempotencyKeys().stream().distinct().count());
+    }
+
+    @Test
+    void exhaustedRetriesNeedReconciliationAndBlockReplay() throws Exception {
+        INVENTORY.respondWith(500);
+        INVENTORY.respondWith(500);
+        INVENTORY.respondWith(500);
+        checkout("checkout-key-0006").andExpect(status().isAccepted());
+
+        worker.processPending();
+        worker.processPending();
+        worker.processPending();
+
         assertEquals(CheckoutAttempt.NEEDS_RECONCILIATION,
-            attempts.findById("order-key-0006").orElseThrow().getStatus());
+            attempts.findById("checkout-key-0006").orElseThrow().getStatus());
+        assertEquals(OutboxEvent.FAILED, outbox.findByAggregateKey("checkout-key-0006").get(0).getStatus());
 
-        checkout("order-key-0006")
+        checkout("checkout-key-0006")
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.error").value(
-                "A previous attempt needs reconciliation; check inventory before retrying"));
+                "A previous attempt is being reconciled automatically; retry shortly"));
     }
 
-    @Test void failedCheckoutReplayKeepsOriginalStatus() throws Exception {
-        INVENTORY.respondWith(409);
-        checkout("order-key-0007").andExpect(status().isConflict());
-        checkout("order-key-0007")
-            .andExpect(status().isConflict())
-            .andExpect(jsonPath("$.error").value("Insufficient stock"));
+    @Test
+    void unknownBookCancelsTheOrder() throws Exception {
+        INVENTORY.respondWith(404);
+        checkout("checkout-key-0007").andExpect(status().isAccepted());
+        long orderId = orderIdFor("checkout-key-0007");
+
+        worker.processPending();
+
+        assertEquals(OrderRecord.CANCELLED, statusOf(orderId));
+        assertEquals(404, attempts.findById("checkout-key-0007").orElseThrow().getResponseStatus().intValue());
     }
 
-    @Test void rejectsMissingOrMalformedIdempotencyKey() throws Exception {
+    @Test
+    void rejectsMissingOrMalformedIdempotencyKey() throws Exception {
         checkout(null).andExpect(status().isBadRequest());
         checkout("short").andExpect(status().isBadRequest());
         checkout("contains a space").andExpect(status().isBadRequest());
+        // Longer than 48 characters: the worker must be able to append ":reserve".
+        checkout("k".repeat(49)).andExpect(status().isBadRequest());
         assertTrue(INVENTORY.calls().isEmpty());
+        assertEquals(baselineOrders, orders.count());
     }
 
-    @Test void rejectsInvalidBody() throws Exception {
+    @Test
+    void rejectsInvalidBodyWithoutQueueingWork() throws Exception {
         mvc.perform(post("/api/checkout")
-                .header("Idempotency-Key", "order-key-0008")
+                .header("Idempotency-Key", "checkout-key-0008")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"customerName\":\"\",\"bookId\":0,\"quantity\":0}"))
             .andExpect(status().isBadRequest());
-        assertTrue(INVENTORY.calls().isEmpty());
+        assertTrue(outbox.findByAggregateKey("checkout-key-0008").isEmpty());
+        assertEquals(baselineOrders, orders.count());
     }
 
-    /** Records requests and returns queued statuses (default 200). */
-    static final class InventoryStub {
-        private final HttpServer server;
-        private final Queue<Integer> statuses = new ConcurrentLinkedQueue<>();
-        private final List<String> calls = Collections.synchronizedList(new ArrayList<>());
-
-        private InventoryStub(HttpServer server) { this.server = server; }
-
-        static InventoryStub start() {
-            try {
-                HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-                InventoryStub stub = new InventoryStub(server);
-                server.createContext("/api/inventory/", exchange -> {
-                    String query = exchange.getRequestURI().getQuery();
-                    stub.calls.add(exchange.getRequestMethod() + " " + exchange.getRequestURI().getPath()
-                        + (query == null ? "" : "?" + query));
-                    Integer queued = stub.statuses.poll();
-                    byte[] body = new byte[0];
-                    int status = queued == null ? 200 : queued;
-                    if (status != 200) {
-                        body = "{\"error\":\"stub\"}".getBytes(StandardCharsets.UTF_8);
-                    }
-                    exchange.getResponseHeaders().add("Content-Type", "application/json");
-                    exchange.sendResponseHeaders(status, body.length == 0 ? -1 : body.length);
-                    if (body.length > 0) {
-                        exchange.getResponseBody().write(body);
-                    }
-                    exchange.close();
-                });
-                server.setExecutor(null);
-                server.start();
-                return stub;
-            } catch (IOException error) {
-                throw new UncheckedIOException(error);
-            }
-        }
-
-        String baseUrl() { return "http://127.0.0.1:" + server.getAddress().getPort(); }
-
-        void respondWith(int status) { statuses.add(status); }
-
-        List<String> calls() {
-            synchronized (calls) {
-                return List.copyOf(calls);
-            }
-        }
-
-        void reset() {
-            statuses.clear();
-            calls.clear();
-        }
+    @Test
+    void workerWithNothingPendingIsANoOp() {
+        assertEquals(0, worker.processPending());
+        assertNotEquals(0, baselineOrders);
+        assertTrue(INVENTORY.calls().isEmpty());
     }
 }

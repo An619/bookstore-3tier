@@ -34,6 +34,18 @@ spec:
               value: "8082"
             - name: INVENTORY_SERVICE_URL
               value: {{ .Values.inventory.url | quote }}
+            - name: CHECKOUT_WORKER_ENABLED
+              value: {{ .Values.checkout.worker.enabled | quote }}
+            - name: CHECKOUT_WORKER_DELAY_MS
+              value: {{ .Values.checkout.worker.delayMs | quote }}
+            - name: CHECKOUT_WORKER_MAX_ATTEMPTS
+              value: {{ .Values.checkout.worker.maxAttempts | quote }}
+            - name: CHECKOUT_RECONCILER_ENABLED
+              value: {{ .Values.checkout.reconciler.enabled | quote }}
+            - name: CHECKOUT_RECONCILER_DELAY_MS
+              value: {{ .Values.checkout.reconciler.delayMs | quote }}
+            - name: CHECKOUT_RECONCILER_MAX_CYCLES
+              value: {{ .Values.checkout.reconciler.maxCycles | quote }}
             - name: SPRING_DATASOURCE_URL
               value: "jdbc:postgresql://{{ .Values.database.host }}:5432/{{ .Values.database.name }}"
             - name: SPRING_DATASOURCE_USERNAME

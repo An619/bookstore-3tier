@@ -6,8 +6,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 /**
- * Records the outcome of a checkout so a retried request with the same
- * idempotency key cannot reserve stock or create a second order.
+ * Durable outcome of a checkout keyed by its idempotency key: the order it
+ * created and whether stock reservation completed, failed or needs a human.
  */
 @Entity
 @Table(name = "checkout_attempts")
@@ -31,8 +31,10 @@ public class CheckoutAttempt {
 
     protected CheckoutAttempt() {}
 
-    public CheckoutAttempt(String idempotencyKey, String status, int responseStatus, String message) {
+    public CheckoutAttempt(String idempotencyKey, Long orderId, String status,
+                           int responseStatus, String message) {
         this.idempotencyKey = idempotencyKey;
+        this.orderId = orderId;
         this.status = status;
         this.responseStatus = responseStatus;
         this.message = message;
@@ -44,16 +46,35 @@ public class CheckoutAttempt {
     public Integer getResponseStatus() { return responseStatus; }
     public String getMessage() { return message; }
 
-    void complete(Long orderId) {
-        this.orderId = orderId;
+    public void complete(int responseStatus, String message) {
         this.status = COMPLETED;
-        this.responseStatus = 201;
-        this.message = null;
+        this.responseStatus = responseStatus;
+        this.message = truncate(message);
     }
 
-    void fail(String result, int httpStatus, String reason) {
-        this.status = result;
-        this.responseStatus = httpStatus;
-        this.message = reason;
+    /** Reconciliation found no reservation and re-queued the checkout. */
+    public void retryAfterReconciliation(String message) {
+        this.status = PENDING;
+        this.responseStatus = 202;
+        this.message = truncate(message);
+    }
+
+    public void fail(int responseStatus, String message) {
+        this.status = FAILED;
+        this.responseStatus = responseStatus;
+        this.message = truncate(message);
+    }
+
+    public void needsReconciliation(int responseStatus, String message) {
+        this.status = NEEDS_RECONCILIATION;
+        this.responseStatus = responseStatus;
+        this.message = truncate(message);
+    }
+
+    private static String truncate(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.length() <= 200 ? value : value.substring(0, 200);
     }
 }

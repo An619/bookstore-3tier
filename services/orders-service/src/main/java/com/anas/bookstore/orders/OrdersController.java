@@ -27,7 +27,7 @@ public class OrdersController {
             || request.quantity() == null || request.quantity() < 1) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "customerName, positive bookId and positive quantity are required");
         }
-        return repository.save(new OrderRecord(request.customerName().trim(), request.bookId(), request.quantity(), "CREATED"));
+        return repository.save(new OrderRecord(request.customerName().trim(), request.bookId(), request.quantity(), OrderRecord.CREATED));
     }
 
     @DeleteMapping("/{id}")

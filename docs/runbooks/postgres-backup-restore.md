@@ -34,7 +34,15 @@ Do not run backups/tests concurrently or share the same output directory.
   business invariants, exercise API reads, and record restore time and data loss.
 - Backups across three databases are not an atomic distributed snapshot. Checkout
   recovery must reconcile orders and inventory; do not restore one database
-  independently without reviewing the cross-service consistency impact.
+  independently without reviewing the cross-service consistency impact. Restore
+  both to the same point in time: the inventory ledger
+  (`inventory_operations`) is what lets the orders reconciler decide whether a
+  reservation landed, so an inventory snapshot older than the orders database
+  invalidates it.
+- After a restore, restart the orders service. Any `PENDING` outbox row is
+  retried with its original idempotency key (inventory deduplicates it), and
+  attempts left in `NEEDS_RECONCILIATION` are settled automatically from the
+  ledger.
 - Never replace production data until recovery has been explicitly approved.
 
 Legacy backups, if the optional legacy profile is running, can still be created

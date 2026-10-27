@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Exercise a disposable stack end-to-end through the server-side checkout API.
 
-Creates one demo order, verifies idempotent replay, then deletes the order and
-releases the reserved stock. Never run against production data.
+Checkout is asynchronous: the order is accepted with 202 and confirmed by the
+orders outbox worker once inventory reserves the stock. This script submits an
+order, waits for CONFIRMED, verifies idempotent replay, then releases the stock
+and deletes the order. Never run against production data.
 """
 import argparse
 import json
@@ -43,6 +45,21 @@ def wait_until_ready(base, timeout):
             time.sleep(3)
 
 
+def wait_for_order(base, order_id, expected, timeout):
+    """Poll until the outbox worker has finalised the order."""
+    deadline = time.monotonic() + timeout
+    last = None
+    while time.monotonic() < deadline:
+        order = request(base, f'/api/orders/{order_id}')
+        last = order.get('status')
+        if last == expected:
+            return order
+        if last in ('CANCELLED',):
+            raise RuntimeError(f'Checkout was cancelled by the worker (status {last})')
+        time.sleep(2)
+    raise RuntimeError(f'Order {order_id} did not reach {expected} (last status: {last})')
+
+
 def smoke(base, timeout=180):
     books, stocks = wait_until_ready(base, timeout)
     if not books:
@@ -58,38 +75,43 @@ def smoke(base, timeout=180):
     request(base, path + '/reserve?quantity=0', method='POST', expected=400)
     request(base, path + '/reserve?quantity=2147483647', method='POST', expected=409)
 
-    key = f'smoke-{uuid.uuid4().hex}'
+    key = f'smoke-{uuid.uuid4().hex[:24]}'
     order_id = None
     reserved = False
     failure = None
     try:
-        order = request(base, '/api/checkout', method='POST', expected=201,
-                        headers={'Idempotency-Key': key},
-                        data={'customerName': 'CI Smoke Test', 'bookId': book_id, 'quantity': 1})
-        order_id = order['id']
+        accepted = request(base, '/api/checkout', method='POST', expected=202,
+                           headers={'Idempotency-Key': key},
+                           data={'customerName': 'CI Smoke Test', 'bookId': book_id, 'quantity': 1})
+        order_id = accepted['id']
+        if accepted['status'] != 'PENDING':
+            raise RuntimeError(f'Checkout should be queued as PENDING, got {accepted["status"]}')
+
+        confirmed = wait_for_order(base, order_id, 'CONFIRMED', timeout=90)
         reserved = True
+        if confirmed['bookId'] != book_id:
+            raise RuntimeError('Confirmed order has the wrong book')
+
         after = request(base, path)
         if after['availableQuantity'] != book['availableQuantity'] - 1:
             raise RuntimeError('Checkout did not decrement stock exactly once')
-        replay = request(base, '/api/checkout', method='POST', expected=201,
+
+        replay = request(base, '/api/checkout', method='POST', expected=202,
                          headers={'Idempotency-Key': key},
                          data={'customerName': 'CI Smoke Test', 'bookId': book_id, 'quantity': 1})
         if replay['id'] != order_id:
             raise RuntimeError('Idempotent replay returned a different order')
         if request(base, path)['availableQuantity'] != after['availableQuantity']:
             raise RuntimeError('Idempotent replay reserved stock twice')
-        loaded = request(base, f'/api/orders/{order_id}')
-        if loaded['status'] != 'CREATED' or loaded['bookId'] != book_id:
-            raise RuntimeError('Created order cannot be read back correctly')
     except (URLError, RuntimeError, ValueError, KeyError) as error:
         failure = error
 
-    # Always compensate, and always report the original failure rather than the
-    # cleanup result.
+    # Always compensate, and report the original failure rather than the cleanup.
     cleanup_failures = []
     if reserved:
         try:
-            request(base, path + '/release?quantity=1', method='POST')
+            request(base, path + '/release?quantity=1', method='POST',
+                    headers={'Idempotency-Key': f'{key}:cleanup'})
         except (URLError, RuntimeError, ValueError) as error:
             cleanup_failures.append(f'stock release failed: {error}')
     if order_id is not None:
@@ -108,7 +130,8 @@ def smoke(base, timeout=180):
         raise RuntimeError('Stock compensation did not restore the initial quantity')
     request(base, f'/api/orders/{order_id}', expected=404)
     request(base, '/api/not-a-route', expected=404)
-    print('PASS: readiness, inventory validation, idempotent checkout, replay, cleanup and routing')
+    print('PASS: readiness, inventory validation, async checkout, confirmation, '
+          'idempotent replay, cleanup and routing')
 
 
 if __name__ == '__main__':

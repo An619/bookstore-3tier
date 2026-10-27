@@ -15,18 +15,71 @@ Git -> Jenkins -> Maven tests + JaCoCo -> SonarQube quality gate
 ```
 
 Each domain owns its data; no service queries another service's database.
-Checkout is owned by the orders service: `POST /api/checkout` reserves stock,
-creates the order and releases stock if order creation fails. A required
-`Idempotency-Key` header (8-64 characters) makes retries safe - a repeated key
-returns the original order instead of reserving twice. The browser no longer
-coordinates inventory calls.
 
-Remaining limits: this is a **demo** workflow, not a production payment or saga
-implementation. A crash after reserving stock but before the order is stored
-leaves stock reserved, and such attempts are recorded as
-`NEEDS_RECONCILIATION` and refused rather than retried. There is no automatic
-reconciliation worker, no payment step, no authentication/authorization and no
-distributed transaction. Do not use it for real orders.
+### Asynchronous checkout (transactional outbox)
+
+Checkout is owned by the orders service and is **asynchronous**:
+
+1. `POST /api/checkout` with a required `Idempotency-Key` (8-48 characters; the
+   worker appends `:reserve`, keeping the inventory key within its 64 limit).
+2. One database transaction writes the order (`PENDING`), the idempotency record
+   (`checkout_attempts`) and an event in the transactional outbox
+   (`checkout_outbox`). Either all three exist or none do, so the intent to
+   reserve stock cannot be lost.
+3. The service answers **202 Accepted** with `Idempotency-Replayed: false`. The
+   browser polls `GET /api/orders/{id}` until the status leaves `PENDING`.
+4. `CheckoutWorker` drains pending events every 2 s, calling
+   `POST /api/inventory/{bookId}/reserve` with the derived key
+   `<checkout-key>:reserve`. Inventory records that key, so retries after a
+   timeout or crash replay the original result instead of reserving twice.
+5. A definitive rejection (404 unknown book, 409 insufficient stock, 400 invalid
+   quantity) cancels the order. Other failures are retried; after
+   `checkout.worker.max-attempts` the attempt becomes `NEEDS_RECONCILIATION`.
+6. `CheckoutReconciler` then settles those attempts **without a human**: it reads
+   `GET /api/inventory/operations/{key}` from the inventory ledger.
+   - the reservation is recorded -> order `CONFIRMED`;
+   - no entry -> nothing was reserved, so the event is re-queued and the worker
+     retries (bounded by `checkout.reconciler.max-cycles`);
+   - still no entry after the last cycle -> order `CANCELLED`, which is safe
+     precisely because the ledger proves no stock is held.
+
+Replaying a checkout key never reserves again: a completed key returns the same
+order, a failed key returns its original error, and a key awaiting reconciliation
+returns 409 with a retry-later message. The browser no longer coordinates
+inventory calls.
+
+Worker settings (environment variables in Compose, Helm and EKS):
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `CHECKOUT_WORKER_ENABLED` | `true` | Drain the outbox on this instance |
+| `CHECKOUT_WORKER_DELAY_MS` | `2000` | Delay between batches |
+| `CHECKOUT_WORKER_MAX_ATTEMPTS` | `5` | Attempts before reconciliation |
+| `CHECKOUT_RECONCILER_ENABLED` | `true` | Settle unresolved attempts |
+| `CHECKOUT_RECONCILER_DELAY_MS` | `5000` | Delay between reconciliation batches |
+| `CHECKOUT_RECONCILER_MAX_CYCLES` | `3` | Re-queue rounds before cancelling |
+
+Remaining limits: this is still a **demo** workflow, not a production payment or
+saga implementation. There is no payment step, no authentication/authorization,
+no distributed tracing and no versioned migrations. Delivery is at-least-once
+and makes no ordering guarantee beyond per-event retries. Do not use it for real
+orders.
+
+### Consumer-driven contract tests
+
+`contracts/inventory-api.json` is the contract between orders-service (consumer)
+and inventory-service (provider). Both services copy it onto their test classpath
+(`<testResources>` in each pom) and assert against it, so a breaking rename fails
+**both** builds:
+
+- provider, `InventoryContractTest`: every documented endpoint exists, response
+  field names and JSON types match, documented status codes are the ones
+  actually returned, and a repeated `Idempotency-Key` does not consume stock;
+- consumer, `InventoryClientContractTest`: the client sends exactly the
+  documented path, query parameter and idempotency header, against a local HTTP
+  stub - no inventory service needed.
+
+Change the JSON first, then both sides, and bump `version`.
 
 ## Local stack
 
@@ -57,10 +110,11 @@ same-origin URLs. Kubernetes uses the same domain paths through Nginx.
 
 ## Checkout schema upgrade
 
-Orders persists idempotency outcomes in `checkout_attempts`. The init scripts
-(`database/orders-service-init.sql` and the orders chart ConfigMap) only run on a
-**fresh** PostgreSQL data directory. For an existing database or persistent
-volume, apply this once before deploying the new orders image:
+Orders persists idempotency outcomes in `checkout_attempts` and pending work in
+`checkout_outbox`. The init scripts (`database/orders-service-init.sql` and the
+orders chart ConfigMap) only run on a **fresh** PostgreSQL data directory. For an
+existing database or persistent volume, apply this once before deploying the new
+orders image:
 
 ```sql
 CREATE TABLE IF NOT EXISTS checkout_attempts (
@@ -69,6 +123,30 @@ CREATE TABLE IF NOT EXISTS checkout_attempts (
   status VARCHAR(32) NOT NULL,
   response_status INTEGER NOT NULL,
   message VARCHAR(200)
+);
+
+CREATE TABLE IF NOT EXISTS checkout_outbox (
+  id BIGSERIAL PRIMARY KEY,
+  aggregate_key VARCHAR(64) NOT NULL,
+  event_type VARCHAR(32) NOT NULL,
+  book_id BIGINT NOT NULL,
+  quantity INTEGER NOT NULL,
+  status VARCHAR(16) NOT NULL,
+  attempts INTEGER NOT NULL,
+  reconcile_cycles INTEGER NOT NULL DEFAULT 0,
+  last_error VARCHAR(200)
+);
+```
+
+Inventory needs its ledger table as well:
+
+```sql
+CREATE TABLE IF NOT EXISTS inventory_operations (
+  idempotency_key VARCHAR(64) PRIMARY KEY,
+  operation VARCHAR(16) NOT NULL,
+  book_id BIGINT NOT NULL,
+  quantity INTEGER NOT NULL,
+  resulting_quantity INTEGER NOT NULL
 );
 ```
 
@@ -217,24 +295,32 @@ issuer. Those cannot be provisioned or verified just by editing the repository.
 Use the configuration steps above in an authorized environment. No public
 exposure, cloud resources, or deployment is performed automatically.
 
-## Reconciling interrupted checkouts
+## Inspecting unresolved checkouts
 
-`checkout_attempts` never hides a possible double effect. Inspect unresolved
-attempts in the orders database (read-only query):
+Reconciliation is automatic, so a stuck row means the *reconciler* could not
+reach the inventory ledger (for example inventory was down for longer than you
+tolerate). Rows left in these states are diagnostics, not a work queue:
 
 ```sql
 SELECT idempotency_key, order_id, status, response_status, message
 FROM checkout_attempts
 WHERE status IN ('PENDING', 'NEEDS_RECONCILIATION')
 ORDER BY idempotency_key;
+
+SELECT aggregate_key, status, attempts, reconcile_cycles, last_error
+FROM checkout_outbox
+WHERE status <> 'DONE'
+ORDER BY id;
 ```
 
-For each row, compare the inventory service's stock with the expected value and
-decide whether stock must be released or an order recorded. Then resolve the row
-manually (for example set `status = 'FAILED'` after releasing stock, or attach the
-confirmed `order_id` and set `status = 'COMPLETED'`). There is **no** automation
-for this; it is an operator action. A `PENDING` row means a checkout request did
-not finish (for example the pod was killed) - confirm what the inventory service
-actually did before retrying with the same key.
+Both workers are safe to restart at any time: a crash mid-call leaves the outbox
+row `PENDING`, the retry reuses the same idempotency key and the inventory ledger
+deduplicates it. To force a stuck checkout to be reconsidered, set its attempt
+back to `NEEDS_RECONCILIATION`; the reconciler reads the ledger again and settles
+it. **Do not** edit stock quantities by hand - the ledger is the source of truth
+for whether a reservation landed.
 
-This limitation is why the demo is not suitable for real payments.
+Because the browser polls for confirmation, a checkout can stay `PENDING` for a
+few seconds after a 202 response. That is expected, not an error.
+
+This limitation set is why the demo is not suitable for real payments.

@@ -7,6 +7,17 @@ service:
   port: 8082
 inventory:
   url: http://inventory-service:8083
+# Asynchronous checkout. The worker drains the outbox; the reconciler settles
+# attempts it could not confirm using the inventory ledger.
+checkout:
+  worker:
+    enabled: true
+    delayMs: 2000
+    maxAttempts: 5
+  reconciler:
+    enabled: true
+    delayMs: 5000
+    maxCycles: 3
 database:
   # false = use an external PostgreSQL; the chart then renders no database pods.
   deploy: true
