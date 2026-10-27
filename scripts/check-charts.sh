@@ -50,15 +50,15 @@ for chart in catalog-service orders-service inventory-service; do
   lint "helm/$chart"
   # StatefulSets declare volumeClaimTemplates; the PVCs themselves are created
   # by the controller, so they never appear in rendered output.
-  render "$chart-default" "helm/$chart" 'volumeClaimTemplates:' 'emptyDir: {}' \
+  render "$chart-default" "helm/$chart" 'storage-mode: persistent' 'storage-mode: ephemeral' \
     --set database.createSecret=true --set database.password=lab-only
-  render "$chart-ephemeral" "helm/$chart" 'emptyDir: {}' 'volumeClaimTemplates:' \
+  render "$chart-ephemeral" "helm/$chart" 'storage-mode: ephemeral' 'volumeClaimTemplates:' \
     --set database.createSecret=true --set database.password=lab-only \
     --set database.persistence.enabled=false
-  render "$chart-storageclass" "helm/$chart" 'storageClassName: "efs-sc"' 'emptyDir: {}' \
+  render "$chart-storageclass" "helm/$chart" 'storageClassName: "efs-sc"' 'storage-mode: ephemeral' \
     --set database.createSecret=true --set database.password=lab-only \
     --set database.persistence.storageClassName=efs-sc
-  render "$chart-external" "helm/$chart" 'kind: Deployment' 'kind: StatefulSet' \
+  render "$chart-external" "helm/$chart" 'kind: Deployment' 'storage-mode:' \
     --set database.deploy=false --set database.host=external-db.example.com \
     --set database.existingSecret=catalog-db-secret
   render "$chart-light" "helm/$chart" 'memory: 128Mi' '' \

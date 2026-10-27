@@ -8,6 +8,8 @@ service:
 inventory:
   url: http://inventory-service:8083
 database:
+  # false = use an external PostgreSQL; the chart then renders no database pods.
+  deploy: true
   # LAB ONLY: set createSecret=true to let this chart create the credential
   # Secret. Shared clusters should use an externally managed Secret instead.
   createSecret: false

@@ -68,12 +68,14 @@ spec:
           configMap:
             name: {{ .Release.Name }}-catalog-init
         {{- if not .Values.database.persistence.enabled }}
-        # Ephemeral: no volume, so no CSI driver or StorageClass is needed.
-        # Data is lost whenever this pod is replaced; use for demos only.
+        # storage-mode: ephemeral
+        # No volume, so no CSI driver or StorageClass is needed. Data is lost
+        # whenever this pod is replaced; use for demos only.
         - name: data
           emptyDir: {}
         {{- end }}
   {{- if .Values.database.persistence.enabled }}
+  # storage-mode: persistent
   volumeClaimTemplates:
     - metadata:
         name: data

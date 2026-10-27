@@ -94,6 +94,9 @@ EKS_DB_STORAGE=external \
   make eks-deploy
 ```
 
+Rendered charts make this explicit with a `storage-mode:` marker, and
+`sh scripts/check-charts.sh` verifies all three profiles.
+
 With `ephemeral`, a database pod restart **destroys its data**: the smoke test
 and demo orders disappear, and the init script re-seeds the sample rows. That is
 acceptable for a practice cluster; do not rely on it. With `pvc`, no
