@@ -47,38 +47,21 @@ pipeline {
                     sh 'node --version'
                     sh 'npm ci'
                     sh 'npm test'
+                    sh 'npm audit --audit-level=high'
                 }
             }
         }
 
-        stage('Maven catalog service validation') {
+        stage('Maven microservices verification') {
             steps {
-                dir('services/catalog-service') {
-                    sh 'java -version'
-                    sh '''
-                        for attempt in 1 2 3; do
-                          mvn -B -ntp verify && exit 0
-                          echo "Maven attempt $attempt failed; retrying"
-                          sleep $((attempt * 5))
-                        done
-                        exit 1
-                    '''
-                }
+                sh 'java -version'
+                sh 'mvn -B -ntp verify'
+                sh 'python3 -m unittest discover -s tests -v'
             }
-        }
-
-        stage('Orders microservice validation') {
-            steps {
-                dir('services/orders-service') {
-                    sh 'mvn -B -ntp verify'
-                }
-            }
-        }
-
-        stage('Inventory microservice validation') {
-            steps {
-                dir('services/inventory-service') {
-                    sh 'mvn -B -ntp verify'
+            post {
+                always {
+                    junit 'services/*/target/surefire-reports/*.xml'
+                    archiveArtifacts artifacts: 'services/*/target/site/jacoco/**', allowEmptyArchive: true
                 }
             }
         }
@@ -90,6 +73,7 @@ pipeline {
                     sh 'npm ci'
                     sh 'npm run lint'
                     sh 'npm run build'
+                    sh 'npm audit --audit-level=high'
                 }
             }
         }
@@ -142,6 +126,8 @@ pipeline {
                 sh '''
                     set -eu
                     command -v helm
+                    helm lint ./helm/frontend
+                    helm template bookstore-frontend ./helm/frontend --namespace bookstore > /tmp/frontend-rendered.yaml
                     helm lint ./helm/bookstore
                     helm template bookstore ./helm/bookstore --namespace bookstore > /tmp/bookstore-rendered.yaml
                     test -s /tmp/bookstore-rendered.yaml
@@ -164,23 +150,13 @@ pipeline {
                 sh '''
                     set -eu
                     attempt=0
-                    until curl --fail --silent http://localhost:5000/api/ready; do
-                      attempt=$((attempt + 1))
-                      if [ "$attempt" -ge 20 ]; then
-                        docker compose logs
-                        exit 1
-                      fi
-                      sleep 3
-                    done
-                    curl --fail --silent http://localhost:5000/api/books | grep -q "DevOps for Beginners"
-                    curl --fail --silent http://localhost:8080/ > /dev/null
-                    curl --fail --silent http://localhost:8080/api/catalog/books | grep -q "Kubernetes Basics"
-                    attempt=0
                     until curl --fail --silent http://localhost:8081/actuator/health/readiness | grep -q '"status":"UP"'; do
                       attempt=$((attempt + 1))
                       if [ "$attempt" -ge 20 ]; then docker compose logs; exit 1; fi
                       sleep 3
                     done
+                    curl --fail --silent http://localhost:8080/ > /dev/null
+                    curl --fail --silent http://localhost:8080/api/catalog/books | grep -q "Kubernetes Basics"
                     curl --fail --silent http://localhost:8081/api/catalog/books | grep -q "Kubernetes Basics"
                     attempt=0
                     until curl --fail --silent http://localhost:8082/actuator/health/readiness | grep -q '"status":"UP"'; do
@@ -195,6 +171,7 @@ pipeline {
                     curl --fail --silent http://localhost:8080/api/orders | grep -q "CREATED"
                     curl --fail --silent http://localhost:8080/api/inventory | grep -q "availableQuantity"
                 '''
+                sh 'python3 scripts/smoke-test.py'
             }
             post {
                 always {
@@ -269,6 +246,21 @@ pipeline {
                         docker push "$INVENTORY_REMOTE"
                     '''
                 }
+            }
+        }
+        stage('Prepare reviewed GitOps release') {
+            when {
+                allOf {
+                    branch 'main'
+                    expression { params.PUBLISH_IMAGES }
+                }
+            }
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_TOKEN')]) {
+                    sh 'python3 scripts/prepare-release.py --registry "docker.io/$DOCKERHUB_USERNAME" --revision "$IMAGE_TAG" --branch main'
+                }
+                archiveArtifacts artifacts: 'deploy/releases/bookstore.json', fingerprint: true
+                echo 'Review and commit the release manifest to Git, then apply it to Argo CD; CI does not mutate the cluster.'
             }
         }
     }

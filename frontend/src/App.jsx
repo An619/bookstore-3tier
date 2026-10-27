@@ -50,7 +50,6 @@ function App() {
     setBusyBookId(book.id);
     setNotice('');
     setError('');
-    let stockReserved = false;
     try {
       const stock = inventory.find((item) => item.bookId === book.id);
       if (!stock || stock.availableQuantity < 1) {
@@ -58,7 +57,6 @@ function App() {
       }
 
       await requestJson(`/api/inventory/${book.id}/reserve?quantity=1`, { method: 'POST' });
-      stockReserved = true;
       try {
         await requestJson('/api/orders', {
           method: 'POST',
@@ -72,24 +70,14 @@ function App() {
       } catch (orderError) {
         try {
           await requestJson(`/api/inventory/${book.id}/release?quantity=1`, { method: 'POST' });
-          stockReserved = false;
         } catch {
-          throw new Error(`${orderError.message} Inventory compensation also failed; check inventory before retrying.`);
+          throw new Error(`${orderError.message} Inventory compensation failed or its result is unknown; check inventory before retrying.`);
         }
         throw orderError;
       }
       setNotice(`Demo order created for “${book.title}”. Inventory was reserved.`);
       loadData().catch(() => setError('Order was created, but the page could not refresh. Reload to see the latest stock and orders.'));
     } catch (err) {
-      if (stockReserved) {
-        try {
-          await requestJson(`/api/inventory/${book.id}/release?quantity=1`, { method: 'POST' });
-        } catch {
-          setError(`${err.message} Inventory compensation also failed; check inventory before retrying.`);
-          setBusyBookId(null);
-          return;
-        }
-      }
       setError(err.message);
     } finally {
       setBusyBookId(null);

@@ -36,6 +36,7 @@ jobs:
         run: |
           npm ci
           npm test
+          npm audit --audit-level=high
 
       - name: Set up Java for Maven microservice
         uses: actions/setup-java@v4
@@ -44,23 +45,11 @@ jobs:
           java-version: "21"
           cache: maven
 
-      - name: Validate Java catalog microservice
-        working-directory: services/catalog-service
-        run: |
-          for attempt in 1 2 3; do
-            mvn -B -ntp verify && exit 0
-            echo "Maven attempt $attempt failed; retrying in case the artifact repository is temporarily unavailable"
-            sleep $((attempt * 5))
-          done
-          exit 1
-
-      - name: Validate orders microservice
-        working-directory: services/orders-service
+      - name: Verify all Maven microservices and coverage
         run: mvn -B -ntp verify
 
-      - name: Validate inventory microservice
-        working-directory: services/inventory-service
-        run: mvn -B -ntp verify
+      - name: Test GitOps release generation
+        run: python3 -m unittest discover -s tests -v
 
       - name: Validate frontend
         working-directory: frontend
@@ -68,6 +57,7 @@ jobs:
           npm ci
           npm run lint
           npm run build
+          npm audit --audit-level=high
 
       - name: Set up Helm
         uses: azure/setup-helm@v4
@@ -76,6 +66,8 @@ jobs:
 
       - name: Lint and render Helm charts
         run: |
+          helm lint ./helm/frontend
+          helm template bookstore-frontend ./helm/frontend --namespace bookstore > /tmp/frontend-rendered.yaml
           helm lint ./helm/bookstore
           helm template bookstore ./helm/bookstore --namespace bookstore > /tmp/bookstore-rendered.yaml
           test -s /tmp/bookstore-rendered.yaml
@@ -89,22 +81,12 @@ jobs:
           helm template inventory-service ./helm/inventory-service --namespace bookstore > /tmp/inventory-rendered.yaml
           test -s /tmp/inventory-rendered.yaml
 
-      - name: Build and start three-tier stack
+      - name: Build and start microservices stack
         run: docker compose up --build -d
 
       - name: Smoke test API and frontend proxy
         run: |
           set -eu
-          for attempt in $(seq 1 30); do
-            if curl --fail --silent http://localhost:5000/api/ready; then
-              break
-            fi
-            if [ "$attempt" -eq 30 ]; then
-              docker compose logs
-              exit 1
-            fi
-            sleep 3
-          done
           for service_port in 8081 8082 8083; do
             for attempt in $(seq 1 40); do
               if curl --fail --silent "http://localhost:${service_port}/actuator/health/readiness" | grep -q '"status":"UP"'; then
@@ -117,7 +99,6 @@ jobs:
               sleep 3
             done
           done
-          curl --fail --silent http://localhost:5000/api/books | grep -q "DevOps for Beginners"
           curl --fail --silent http://localhost:8080/ > /dev/null
           curl --fail --silent http://localhost:8080/api/catalog/books | grep -q "Kubernetes Basics"
           curl --fail --silent http://localhost:8081/api/catalog/books | grep -q 'Kubernetes Basics'
@@ -125,6 +106,18 @@ jobs:
           curl --fail --silent http://localhost:8083/api/inventory | grep -q 'availableQuantity'
           curl --fail --silent http://localhost:8080/api/orders | grep -q 'CREATED'
           curl --fail --silent http://localhost:8080/api/inventory | grep -q 'availableQuantity'
+
+      - name: Exercise demo order and stock compensation
+        run: python3 scripts/smoke-test.py
+
+      - name: Upload Maven test and coverage results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maven-reports
+          path: |
+            services/*/target/surefire-reports/
+            services/*/target/site/jacoco/
 
       - name: Print diagnostic logs on failure
         if: failure()

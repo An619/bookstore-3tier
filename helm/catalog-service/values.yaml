@@ -23,6 +23,8 @@ resources:
     cpu: 500m
     memory: 512Mi
 podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
   runAsNonRoot: true
   runAsUser: 10001
   runAsGroup: 10001
@@ -32,3 +34,7 @@ containerSecurityContext:
   capabilities:
     drop:
       - ALL
+
+imagePullSecrets: []
+networkPolicy:
+  enabled: false

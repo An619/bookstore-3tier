@@ -12,3 +12,7 @@ database:
   secretName: orders-db-secret
   storage: 5Gi
   image: postgres:16-alpine
+
+imagePullSecrets: []
+networkPolicy:
+  enabled: false

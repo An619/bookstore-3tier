@@ -1,6 +1,14 @@
-# Bookstore 3-Tier DevOps Platform
+# Bookstore Microservices DevOps Platform
 
-A hands-on DevOps portfolio lab around a three-tier application. The repository is designed to be practiced in Killercoda first and then moved to a local Kubernetes cluster or AWS EKS.
+A hands-on DevOps portfolio lab with independent Catalog, Orders and Inventory microservices. The repository is designed to be practiced in Killercoda first and then moved to a local Kubernetes cluster or AWS EKS.
+
+## Microservices quick start
+
+See [Microservices build and delivery](docs/microservices-delivery.md) for the
+current Maven → Jenkins → SonarQube → Docker → Argo CD → Kubernetes workflow.
+The default Compose stack no longer needs the legacy Node API; enable it explicitly
+with `--profile legacy` when needed. Use `helm/frontend` plus the three service
+charts for a microservices-only cluster; `helm/bookstore` is the legacy chart.
 
 ## Application architecture
 
@@ -8,7 +16,7 @@ A hands-on DevOps portfolio lab around a three-tier application. The repository 
 - **Catalog domain:** Java 21 + Spring Boot Catalog Service with its own PostgreSQL database.
 - **Orders domain:** Java 21 + Spring Boot Orders Service with its own PostgreSQL database and order API.
 - **Inventory domain:** Java 21 + Spring Boot Inventory Service with its own PostgreSQL database, stock query, reserve and release endpoints.
-- **Legacy routes:** Node.js + Express API remains for business capabilities not yet migrated.
+- **Legacy API:** Node.js + Express is retained under the optional `legacy` Compose profile, on direct port 5000 only.
 - **Data tier:** PostgreSQL.
 - **Local runtime:** Docker Compose with health-gated dependencies and a persistent development database volume.
 
@@ -61,9 +69,6 @@ From the repository root:
 ```bash
 docker compose up --build -d
 docker compose ps
-curl -fsS http://localhost:5000/api/health
-curl -fsS http://localhost:5000/api/ready
-curl -fsS http://localhost:5000/api/books
 curl -fsS http://localhost:8080/api/catalog/books
 curl -fsS http://localhost:8081/actuator/health/readiness
 curl -fsS http://localhost:8081/api/catalog/books

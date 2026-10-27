@@ -1,0 +1,6 @@
+apiVersion: v2
+name: bookstore-frontend
+description: Standalone UI and API routing for the Bookstore microservices
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

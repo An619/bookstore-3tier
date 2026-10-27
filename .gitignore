@@ -32,3 +32,10 @@ crash.log
 crash.*.log
 terraform.tfvars
 terraform.tfvars.json
+
+# Maven output
+**/target/
+__pycache__/
+
+# Local Python validation environment
+.venv/

@@ -1,5 +1,9 @@
 # Microservices migration status
 
+> For the current microservices-only stack and release workflow, see
+> [Microservices build and delivery](microservices-delivery.md). Legacy instructions
+> below are retained for reference; the Node API now requires `--profile legacy`.
+
 The repository now has three separately deployable Java 21/Spring Boot services—Catalog, Orders and Inventory—each with its own PostgreSQL database. Nginx routes all three domain APIs while the legacy Node.js API remains temporarily for routes not yet migrated.
 
 ## Service APIs

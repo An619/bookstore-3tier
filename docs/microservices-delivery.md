@@ -1,0 +1,150 @@
+# Microservices build and delivery
+
+## Topology
+
+```text
+Browser -> React / Nginx (frontend)
+              | /api/catalog/* -> Catalog:8081 -> catalog PostgreSQL
+              | /api/orders*  -> Orders:8082 -> orders PostgreSQL
+              | /api/inventory* -> Inventory:8083 -> inventory PostgreSQL
+
+Git -> Jenkins -> Maven tests + JaCoCo -> SonarQube quality gate
+              -> Docker images -> smoke tests -> registry (commit SHA tags)
+              -> reviewed release manifest -> Git -> Argo CD -> Kubernetes
+```
+
+Each domain owns its data; no service queries another service's database.
+The UI still coordinates reserve/create/release as a demo, not a durable saga.
+Client crashes and ambiguous network failures require reconciliation; do not use
+this checkout flow for real payments. Authentication, idempotent server-side
+checkout and production database operations remain out of scope.
+
+## Local stack
+
+```sh
+docker compose up --build -d --wait
+curl -f http://localhost:8080/api/catalog/books
+curl -f http://localhost:8080/api/orders
+curl -f http://localhost:8080/api/inventory
+```
+
+The default stack is frontend, three services and three databases. The old Node
+API and its database are available only with `docker compose --profile legacy
+up --build -d`; legacy endpoints are direct on port 5000, not routed by Nginx.
+Stop with `docker compose down` (preserves data). Never use `down -v` on data you
+need to keep. Existing legacy data is **not** automatically migrated.
+
+For source development use Java 21, Maven 3.9+, Node 22, Python 3 and Docker:
+
+```sh
+mvn -B -ntp verify                       # all three services + JaCoCo XML
+mvn -B -ntp -pl services/orders-service verify  # one service
+python3 -m unittest discover -s tests -v
+cd frontend && npm ci && npm run dev
+```
+
+Vite proxies domain APIs server-side to service ports 8081–8083; browsers use
+same-origin URLs. Kubernetes uses the same domain paths through Nginx.
+
+## Jenkins and SonarQube
+
+Use the root Jenkinsfile in a multibranch job. Agents need Java 21, Maven 3.9+,
+Node 22/npm, Python 3, Docker/Compose, curl and Helm 3; optional Trivy, AWS CLI,
+and SonarScanner CLI must be installed when their stages are enabled.
+
+Configure Jenkins secret-text credential `sonarqube-token`, set agent environment
+`SONAR_HOST_URL` to your SonarQube URL and enable `SONARQUBE_ENABLED`. Analysis
+runs after Maven generates class files and JaCoCo reports. Scanner waits for the
+server's quality gate; failure blocks image build/publishing. Set the desired
+coverage/issue thresholds on the `bookstore-3tier` project in SonarQube. Without
+this parameter enabled there is no Sonar quality gate (appropriate only for local
+learning). Configure a matching SonarScanner/server version for your installation.
+
+For Docker Hub publishing, configure username/password credential
+`dockerhub-creds` (use an access token as password) and enable `PUBLISH_IMAGES`.
+Only main builds publish. Images are tagged with the 12-character source SHA.
+The pipeline then archives `deploy/releases/bookstore.json`; it never pushes a
+Git change or deploys directly. ECR publishing is retained; generate an ECR
+release manually using the matching namespace (e.g. registry/bookstore-lab would
+not match the existing ECR repository names: use explicit Helm image overrides
+for those repositories).
+
+## Reviewed GitOps deployment
+
+1. Install Argo CD separately in the cluster and configure access to this Git repo
+   and the image registry. Configure registry pull credentials on the namespace's
+   service account if images are private. Enable a default StorageClass.
+2. Create namespace `bookstore` and Secrets `catalog-db-secret`,
+   `orders-db-secret`, `inventory-db-secret`, each with `username` and `password`
+   keys, using a secret manager or another approved secure workflow. The username
+   for catalog is `cataloguser`; for orders/inventory it is `serviceuser`.
+3. Download the Jenkins release artifact, or generate one for **published** images:
+
+   ```sh
+   python3 scripts/prepare-release.py --registry docker.io/YOUR_ACCOUNT \
+     --revision YOUR_12_CHARACTER_SHA --branch arena/22830f5b-bookstore-3tier
+   ```
+
+   Replace placeholders (registry/account must be lowercase). Set `--branch` to
+   the branch holding the reviewed charts: this session branch until merged,
+   then `main`. Review and commit `deploy/releases/bookstore.json` through your
+   normal review workflow. This file is JSON, also valid Kubernetes manifest input.
+4. Apply only that reviewed release: `kubectl apply -f deploy/releases/bookstore.json`.
+   It creates four Argo CD Applications. Do **not** also apply the legacy
+   `argocd/bookstore-application.yaml` or install `helm/bookstore`.
+5. Sync Catalog, Orders and Inventory first. Once healthy, sync frontend in Argo CD.
+   Manual sync is intentional; enable automation only after reviewing storage,
+   secret management and pruning policies.
+6. Access with `kubectl -n bookstore port-forward svc/bookstore-frontend 8080:80`
+   and open localhost:8080 on the machine running kubectl. For remote access,
+   provision an ingress/TLS or a suitable load balancer separately.
+
+Argo CD tracks chart revisions from Git and uses immutable image overrides from
+the reviewed Application manifest. After each approved release, re-apply the
+manifest to update those overrides (there is no app-of-apps controller here).
+To roll back, restore the previous release manifest and apply/sync it; do not
+roll back database data blindly. Keep release history in Git.
+
+The three bundled PostgreSQL StatefulSets are for a learning cluster: production
+needs managed databases or a database operator, backups and restore tests, TLS,
+network policies, authentication, observability and independent schema migrations.
+
+## Deployment hardening added
+
+- `sh scripts/preflight.sh` checks tool availability, Docker daemon and cluster
+  connectivity without printing credential values; exits nonzero if unavailable.
+- `python3 scripts/smoke-test.py --base-url http://localhost:8080` waits for all
+  domain APIs and exercises validation, reserve, create/read order and stock
+  release. **Disposable environments only:** it creates a diagnostic order and
+  restores stock; it does not delete that order.
+- CI fails on npm high/critical advisories. Maven reports are archived by Jenkins
+  and GitHub Actions.
+- Inventory writes now lock the stock row within a transaction, preventing
+  concurrent read/modify/write overselling. Tests cover contention, invalid
+  quantities and integer overflow; execute them with Maven on Java 21.
+- All application pods disable automatic Kubernetes API-token mounting and have
+  startup probes; private image pull secrets are configurable per chart.
+- `deploy/examples/frontend-values.yaml` illustrates ingress/TLS and network
+  isolation. Set real DNS/TLS values. Install an ingress controller separately;
+  create a TLS Secret through your certificate manager. No certificates are
+  generated or committed here.
+- Each chart has opt-in `networkPolicy.enabled`. Enable it on **all four** charts
+  after verifying your CNI enforces NetworkPolicy. APIs accept only the frontend;
+  each database accepts only its owning API; APIs allow DNS and their own DB.
+  The frontend web port is public, while its outbound connections are limited to
+  DNS and domain APIs. Adapt DNS policies for NodeLocal DNS if used. Database
+  isolation blocks ad-hoc backup/monitoring pods until explicitly allowed.
+
+When using generated Argo Applications, add reviewed Helm `parameters` or
+`valuesObject` to each Application for these settings; the frontend example is
+not automatically included. Network policy is defense-in-depth, **not user
+identity or authorization**. Do not expose this demo to the public Internet
+without implementing and testing authentication and a durable checkout workflow.
+
+## External work still requires access
+
+This checkout does not supply a running Jenkins controller, SonarQube server,
+container registry credentials, Kubernetes context, DNS zone or certificate
+issuer. Those cannot be provisioned or verified just by editing the repository.
+Use the configuration steps above in an authorized environment. No public
+exposure, cloud resources, or deployment is performed automatically.

@@ -1,0 +1,25 @@
+replicaCount: 1
+image:
+  repository: bookstore-frontend
+  tag: local
+  pullPolicy: IfNotPresent
+service:
+  type: ClusterIP
+  port: 80
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+imagePullSecrets: []
+networkPolicy:
+  enabled: false
+ingress:
+  enabled: false
+  className: nginx
+  host: bookstore.example.com
+  annotations: {}
+  tls: []

@@ -14,6 +14,14 @@ spec:
         app.kubernetes.io/name: orders-service
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: orders-service
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -36,6 +44,12 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.database.secretName }}
                   key: password
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
