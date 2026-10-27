@@ -3,6 +3,8 @@ package com.anas.bookstore.orders;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.Test;
@@ -65,10 +67,24 @@ class SecurityConfigTest {
             .andExpect(status().isAccepted());
     }
 
+    private int statusOf(String path) throws Exception {
+        return mvc.perform(get(path)).andReturn().getResponse().getStatus();
+    }
+
+    /**
+     * Probes and metrics must never need a credential. Whether an endpoint is
+     * exposed at all is configuration; the Compose smoke test scrapes
+     * /actuator/prometheus on the real container.
+     */
     @Test
-    void probesAndMetricsStayPublic() throws Exception {
-        mvc.perform(get("/actuator/health/liveness")).andExpect(status().isOk());
-        mvc.perform(get("/actuator/prometheus")).andExpect(status().isOk());
+    void probesAndMetricsRequireNoCredentials() throws Exception {
+        for (String path : new String[] {"/actuator/health", "/actuator/health/liveness",
+                "/actuator/prometheus"}) {
+            int status = statusOf(path);
+            assertNotEquals(401, status, path + " must not require a token");
+            assertNotEquals(403, status, path + " must not require a scope");
+        }
+        assertEquals(200, statusOf("/actuator/health"));
     }
 
     @Test

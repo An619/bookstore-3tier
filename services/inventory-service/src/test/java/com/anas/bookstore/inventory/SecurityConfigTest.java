@@ -3,6 +3,7 @@ package com.anas.bookstore.inventory;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.Test;
@@ -55,9 +56,22 @@ class SecurityConfigTest {
             .andExpect(status().isOk());
     }
 
+    private int statusOf(String path) throws Exception {
+        return mvc.perform(get(path)).andReturn().getResponse().getStatus();
+    }
+
+    /**
+     * Probes and metrics must never need a credential. Endpoint availability is
+     * asserted separately (a DOWN health assessment is still a 503, not a 401).
+     */
     @Test
-    void probesAndMetricsStayPublic() throws Exception {
-        mvc.perform(get("/actuator/health/liveness")).andExpect(status().isOk());
-        mvc.perform(get("/actuator/prometheus")).andExpect(status().isOk());
+    void probesAndMetricsRequireNoCredentials() throws Exception {
+        for (String path : new String[] {"/actuator/health", "/actuator/health/liveness",
+                "/actuator/prometheus"}) {
+            int status = statusOf(path);
+            assertNotEquals(401, status, path + " must not require a token");
+            assertNotEquals(403, status, path + " must not require a scope");
+            assertNotEquals(404, status, path + " must be exposed");
+        }
     }
 }

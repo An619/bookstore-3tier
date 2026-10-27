@@ -185,6 +185,8 @@ pipeline {
                       attempt=$((attempt + 1)); if [ "$attempt" -ge 20 ]; then docker compose logs; exit 1; fi; sleep 3
                     done
                     curl --fail --silent http://localhost:$ORDERS_PORT/api/orders | grep -q "CREATED"
+                    # Checkout pipeline gauges must be scraped from the real container.
+                    curl --fail --silent http://localhost:$ORDERS_PORT/actuator/prometheus | grep -q "checkout_outbox_pending"
                     curl --fail --silent http://localhost:$INVENTORY_PORT/api/inventory | grep -q "availableQuantity"
                     curl --fail --silent http://localhost:$FRONTEND_PORT/api/orders | grep -q "CREATED"
                     curl --fail --silent http://localhost:$FRONTEND_PORT/api/inventory | grep -q "availableQuantity"

@@ -149,6 +149,8 @@ jobs:
           curl --fail --silent http://localhost:8080/api/catalog/books | grep -q "Kubernetes Basics"
           curl --fail --silent http://localhost:8081/api/catalog/books | grep -q 'Kubernetes Basics'
           curl --fail --silent http://localhost:8082/api/orders | grep -q 'CREATED'
+          # The checkout gauges must be scrapeable from the running container.
+          curl --fail --silent http://localhost:8082/actuator/prometheus | grep -q 'checkout_outbox_pending'
           curl --fail --silent http://localhost:8083/api/inventory | grep -q 'availableQuantity'
           curl --fail --silent http://localhost:8080/api/orders | grep -q 'CREATED'
           curl --fail --silent http://localhost:8080/api/inventory | grep -q 'availableQuantity'
