@@ -104,6 +104,15 @@ jobs:
           helm template bookstore-frontend ./helm/frontend --namespace bookstore \
             --set service.type=NodePort --set service.nodePort=30080 > /tmp/frontend-lab.yaml
           grep -q 'nodePort: 30080' /tmp/frontend-lab.yaml
+          # Killercoda profile: reduced requests must still render.
+          for chart in catalog-service orders-service inventory-service; do
+            helm template "$chart" "./helm/$chart" --namespace bookstore \
+              --set database.createSecret=true --set database.password=lab-only \
+              --set resources.requests.memory=128Mi --set resources.limits.memory=384Mi \
+              --set database.storage=1Gi > "/tmp/$chart-light.yaml"
+            grep -q 'memory: 128Mi' "/tmp/$chart-light.yaml"
+          done
+          python3 -c "import yaml,sys; list(yaml.safe_load_all(open('deploy/eks/storageclass.yaml'))); print('storageclass ok')"
 
       - name: Build and start microservices stack
         env:

@@ -10,8 +10,13 @@ make lab-ci     # add Jenkins and SonarQube, fully configured
 ```
 
 Only Docker, `git`, `python3` and `curl` are required: `kind` is downloaded
-(checksum-verified) and Helm runs from a pinned container image. See
-[docs/QUICKSTART.md](docs/QUICKSTART.md) for the short version and
+(checksum-verified) and Helm runs from a pinned container image.
+
+- Browser VM practice: [docs/killercoda.md](docs/killercoda.md) (`make lab-light`)
+- AWS: [docs/eks.md](docs/eks.md) (`make eks-plan`, `eks-apply`, `eks-images`,
+  `eks-deploy`, `eks-destroy`)
+
+See [docs/QUICKSTART.md](docs/QUICKSTART.md) for the short version and
 [Microservices build and delivery](docs/microservices-delivery.md) for the
 current Maven → Jenkins → SonarQube → Docker → Argo CD → Kubernetes workflow.
 The default Compose stack no longer needs the legacy Node API; enable it explicitly
@@ -112,7 +117,7 @@ The Compose database password and Helm default password are for disposable local
 
 ## Recommended learning path
 
-1. Run the app locally and understand each tier and health/readiness check.
+1. Run the app locally (or on Killercoda with `make lab-light`) and understand each tier and health/readiness check.
 2. Review GitHub Actions and fix any failed CI stages.
 3. Configure Jenkins Multibranch Pipeline and optional SonarQube/Trivy integrations.
 4. Validate the Java Catalog Service with Maven and SonarQube, then build/push immutable images to a registry.
@@ -120,7 +125,7 @@ The Compose database password and Helm default password are for disposable local
 6. Configure environment-specific values and manually sync Argo CD.
 7. Add monitoring, test alert delivery and practice rollback/restore.
 8. Review Terraform, set a supported EKS version and trusted API endpoint CIDR, then plan AWS infrastructure.
-9. Deploy to EKS, validate the workload and destroy lab resources when finished.
+9. Deploy to EKS with `make eks-apply && make eks-images && make eks-deploy`, validate the workload, then `make eks-destroy` to stop billing.
 
 ## Engineering principles
 

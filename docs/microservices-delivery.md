@@ -199,6 +199,14 @@ not automatically included. Network policy is defense-in-depth, **not user
 identity or authorization**. Do not expose this demo to the public Internet
 without implementing and testing authentication and a durable checkout workflow.
 
+## Practising and deploying
+
+- Browser VM (no local Docker): `docs/killercoda.md`, using `make lab-light`.
+- AWS EKS: `docs/eks.md` with `make eks-plan|eks-apply|eks-images|eks-deploy|
+  eks-release|eks-status|eks-destroy`. ECR names are
+  `<project>-<environment>-<component>`; pass the same prefix to
+  `scripts/prepare-release.py --repository-prefix` (the Makefile target does).
+
 ## External work still requires access
 
 This checkout does not supply a running Jenkins controller, SonarQube server,

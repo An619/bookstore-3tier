@@ -2,6 +2,21 @@
 
 This configuration provisions a VPC with public/private subnets, one NAT gateway, an EKS cluster with managed worker nodes, and five immutable ECR repositories with image scanning on push and an untagged-image lifecycle policy.
 
+The configuration also installs the **EBS CSI driver** with a dedicated IRSA
+role; EKS has no in-tree volume provisioner, so the application's PostgreSQL
+PVCs cannot bind without it. `deploy/eks/storageclass.yaml` (gp3, encrypted) is
+applied by `make eks-deploy`.
+
+The whole path is scripted from the repository root:
+
+```sh
+export AWS_REGION=ap-south-1
+make eks-plan && make eks-apply && make eks-images && make eks-deploy && make eks-status
+make eks-destroy   # when finished; stops billing
+```
+
+See `docs/eks.md` for details, GitOps release generation and troubleshooting.
+
 ## Prerequisites
 - Terraform 1.6+
 - AWS CLI configured with an identity that has the required VPC, IAM, EKS, EC2 and ECR permissions

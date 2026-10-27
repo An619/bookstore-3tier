@@ -28,3 +28,10 @@ serviceMonitor:
   # Must match your Prometheus resource's serviceMonitorSelector labels.
   labels:
     release: kube-prometheus-stack
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

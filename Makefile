@@ -6,7 +6,7 @@ CI_LAB := sh deploy/local/ci/lab.sh
 
 .DEFAULT_GOAL := help
 
-.PHONY: help lab lab-ci lab-ci-run lab-url lab-status lab-logs lab-down ci-status ci-run ci-down ci-reset test verify frontend preflight
+.PHONY: help lab lab-light lab-ci lab-ci-run lab-url lab-status lab-logs lab-down eks-plan eks-apply eks-images eks-deploy eks-release eks-status eks-destroy ci-status ci-run ci-down ci-reset test verify frontend preflight
 
 help: ## Show the available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -47,6 +47,30 @@ ci-down: ## Stop Jenkins/SonarQube (keeps their data)
 
 ci-reset: ## Stop Jenkins/SonarQube and delete their data
 	$(CI_LAB) reset
+
+lab-light: ## Start the lab with small requests for a 2 CPU / 4 GB machine (Killercoda)
+	sh scripts/lab.sh up --light --open
+
+eks-plan: ## Terraform plan for the EKS lab (no changes)
+	sh scripts/eks.sh plan
+
+eks-apply: ## Create the EKS cluster, ECR repositories and EBS CSI driver (BILLABLE)
+	sh scripts/eks.sh apply
+
+eks-images: ## Build and push the four images tagged with this commit
+	sh scripts/eks.sh images
+
+eks-deploy: ## Create Secrets and install the charts from ECR images
+	sh scripts/eks.sh deploy
+
+eks-release: ## Write a reviewed Argo CD manifest for the pushed commit
+	sh scripts/eks.sh release
+
+eks-status: ## Show pods and the frontend load-balancer address
+	sh scripts/eks.sh status
+
+eks-destroy: ## Destroy the EKS cluster and all data (asks for confirmation)
+	sh scripts/eks.sh destroy
 
 preflight: ## Check which local tools are installed
 	sh scripts/preflight.sh

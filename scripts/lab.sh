@@ -4,6 +4,7 @@
 #   sh scripts/lab.sh up            # tools + cluster + images + deploy + smoke test
 #   sh scripts/lab.sh up --ci       # also start Jenkins + SonarQube
 #   sh scripts/lab.sh up --argocd   # deploy through Argo CD instead of Helm
+#   sh scripts/lab.sh up --light    # smaller requests/storage for a 4 GB machine
 #   sh scripts/lab.sh status | logs [pod] | down | url
 #
 # Everything runs on this machine; no cloud resources and no committed secrets.
@@ -26,12 +27,14 @@ action=${1:-up}
 if [ "$#" -gt 0 ]; then shift; fi
 
 skip_build=false
+light_mode=false
 use_argocd=false
 start_ci=false
 open_browser=false
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --skip-build) skip_build=true ;;
+    --light) light_mode=true ;;
     --argocd) use_argocd=true ;;
     --ci) start_ci=true ;;
     --revision) revision=${2:?--revision needs a value}; shift ;;
@@ -49,8 +52,28 @@ mkdir -p "$tools_dir"
 helm_mode=''
 kind_bin=''
 
+check_host_resources() {
+  [ "$(uname -s)" = Linux ] || return 0
+  if [ -r /proc/meminfo ]; then
+    total_mb=$(awk '/^MemTotal:/ {print int($2/1024)}' /proc/meminfo)
+    if [ "${total_mb:-0}" -lt 4500 ]; then
+      printf 'WARNING: %s MB RAM detected; the full lab wants ~6 GB.\n' "$total_mb" >&2
+      printf '         Use: sh scripts/lab.sh up --light\n' >&2
+    fi
+  fi
+  cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 0)
+  if [ "${cpus:-0}" -lt 2 ]; then
+    printf 'WARNING: %s CPU detected; image builds will be slow.\n' "$cpus" >&2
+  fi
+  available_kb=$(df -Pk "$root" 2>/dev/null | awk 'NR==2 {print $4}')
+  if [ -n "${available_kb:-}" ] && [ "$available_kb" -lt 12000000 ]; then
+    printf 'WARNING: under 12 GB free disk; image builds and volumes may fail.\n' >&2
+  fi
+}
+
 setup_tools() {
   lab_require_docker
+  check_host_resources
   command -v python3 >/dev/null 2>&1 || lab_die 'python3 is required.'
   command -v curl >/dev/null 2>&1 || lab_die 'curl is required to download kind.'
   kind_bin=$(lab_ensure_kind)
@@ -129,20 +152,38 @@ helm_upgrade() {
     --namespace "$namespace" --create-namespace --wait --timeout 10m "$@"
 }
 
+# Values that keep the lab within a small machine's memory and disk.
+light_resource_args() {
+  [ "$light_mode" = true ] || return 0
+  printf '%s\n' \
+    '--set' 'resources.requests.cpu=25m' \
+    '--set' 'resources.requests.memory=128Mi' \
+    '--set' 'resources.limits.memory=384Mi'
+}
+
+light_storage_args() {
+  [ "$light_mode" = true ] || return 0
+  printf '%s\n' '--set' 'database.storage=1Gi'
+}
+
 deploy_helm() {
   lab_info 'Deploying with Helm'
+  # shellcheck disable=SC2046
+  set -- $(light_resource_args) $(light_storage_args)
   helm_upgrade catalog-service catalog-service \
     --set database.createSecret=true \
-    --set-file database.password="$tools_dir/secrets/CATALOG_DB_PASSWORD"
+    --set-file database.password="$tools_dir/secrets/CATALOG_DB_PASSWORD" "$@"
   helm_upgrade orders-service orders-service \
     --set database.createSecret=true \
-    --set-file database.password="$tools_dir/secrets/ORDERS_DB_PASSWORD"
+    --set-file database.password="$tools_dir/secrets/ORDERS_DB_PASSWORD" "$@"
   helm_upgrade inventory-service inventory-service \
     --set database.createSecret=true \
-    --set-file database.password="$tools_dir/secrets/INVENTORY_DB_PASSWORD"
+    --set-file database.password="$tools_dir/secrets/INVENTORY_DB_PASSWORD" "$@"
   # Release name must match the Service DNS names used by the other charts.
+  # shellcheck disable=SC2046
+  set -- $(light_resource_args)
   helm_upgrade bookstore-frontend frontend \
-    --set service.type=NodePort --set service.nodePort="$node_port" >/dev/null
+    --set service.type=NodePort --set service.nodePort="$node_port" "$@" >/dev/null
 }
 
 deploy_argocd() {

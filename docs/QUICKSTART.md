@@ -1,5 +1,8 @@
 # Quick start: the fewest possible steps
 
+> **Your plan:** practise on Killercoda (`docs/killercoda.md`), then move to AWS
+> EKS (`docs/eks.md`). This page is the local-machine version they build on.
+
 Two commands get the whole application running locally. Prerequisites: Docker
 Engine or Docker Desktop (running), `git`, `python3` and `curl`. `kind` is
 downloaded automatically (checksum-verified); Helm runs through its pinned
@@ -32,6 +35,7 @@ creates the `bookstore-pipeline` job. Then run `make ci-run` to execute it.
 | Command | What it does |
 | --- | --- |
 | `make lab` | Bring the application up (or update it after code changes) |
+| `make lab-light` | Same, with small requests/storage for a 2 CPU / 4 GB machine |
 | `make lab-status` / `make lab-logs` | Inspect the cluster / follow logs |
 | `make lab-down` | Delete the lab cluster and its data |
 | `make lab-argocd` | Deploy through Argo CD instead of Helm (`kubectl` required) |
@@ -41,6 +45,15 @@ creates the `bookstore-pipeline` job. Then run `make ci-run` to execute it.
 | `make ci-status` | Show the lab URLs and generated passwords |
 | `make ci-reset` | Delete Jenkins/SonarQube data and start over |
 | `make verify` | Run the tests that need no Docker (Python, frontend, Maven) |
+
+## Practise, then deploy for real
+
+1. **Killercoda** — `docs/killercoda.md` has the exact clone, install and
+   `make lab-light` steps for the browser VM, plus what cannot be practised there.
+2. **EKS** — `docs/eks.md`: fill `terraform/eks/terraform.tfvars`, then
+   `make eks-plan`, `eks-apply`, `eks-images`, `eks-deploy`, `eks-status`, and
+   `eks-destroy` when finished. Terraform now also installs the EBS CSI driver,
+   which is what makes the database volumes bind on EKS.
 
 ## Things you still have to decide
 
