@@ -5,7 +5,8 @@
 ```text
 Browser -> React / Nginx (frontend)
               | /api/catalog/* -> Catalog:8081 -> catalog PostgreSQL
-              | /api/orders*  -> Orders:8082 -> orders PostgreSQL
+              | /api/checkout   -> Orders:8082 ----reserve/release--> Inventory:8083
+              | /api/orders*    -> Orders:8082 -> orders PostgreSQL
               | /api/inventory* -> Inventory:8083 -> inventory PostgreSQL
 
 Git -> Jenkins -> Maven tests + JaCoCo -> SonarQube quality gate
@@ -14,10 +15,18 @@ Git -> Jenkins -> Maven tests + JaCoCo -> SonarQube quality gate
 ```
 
 Each domain owns its data; no service queries another service's database.
-The UI still coordinates reserve/create/release as a demo, not a durable saga.
-Client crashes and ambiguous network failures require reconciliation; do not use
-this checkout flow for real payments. Authentication, idempotent server-side
-checkout and production database operations remain out of scope.
+Checkout is owned by the orders service: `POST /api/checkout` reserves stock,
+creates the order and releases stock if order creation fails. A required
+`Idempotency-Key` header (8-64 characters) makes retries safe - a repeated key
+returns the original order instead of reserving twice. The browser no longer
+coordinates inventory calls.
+
+Remaining limits: this is a **demo** workflow, not a production payment or saga
+implementation. A crash after reserving stock but before the order is stored
+leaves stock reserved, and such attempts are recorded as
+`NEEDS_RECONCILIATION` and refused rather than retried. There is no automatic
+reconciliation worker, no payment step, no authentication/authorization and no
+distributed transaction. Do not use it for real orders.
 
 ## Local stack
 
@@ -45,6 +54,27 @@ cd frontend && npm ci && npm run dev
 
 Vite proxies domain APIs server-side to service ports 8081–8083; browsers use
 same-origin URLs. Kubernetes uses the same domain paths through Nginx.
+
+## Checkout schema upgrade
+
+Orders persists idempotency outcomes in `checkout_attempts`. The init scripts
+(`database/orders-service-init.sql` and the orders chart ConfigMap) only run on a
+**fresh** PostgreSQL data directory. For an existing database or persistent
+volume, apply this once before deploying the new orders image:
+
+```sql
+CREATE TABLE IF NOT EXISTS checkout_attempts (
+  idempotency_key VARCHAR(64) PRIMARY KEY,
+  order_id BIGINT,
+  status VARCHAR(32) NOT NULL,
+  response_status INTEGER NOT NULL,
+  message VARCHAR(200)
+);
+```
+
+The service validates its schema at startup (`ddl-auto=validate`), so it fails
+fast instead of silently creating tables. A real deployment should manage this
+with versioned migrations.
 
 ## Local Kubernetes lab
 

@@ -56,26 +56,21 @@ function App() {
         throw new Error('This book is currently out of stock.');
       }
 
-      await requestJson(`/api/inventory/${book.id}/reserve?quantity=1`, { method: 'POST' });
-      try {
-        await requestJson('/api/orders', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            customerName: 'Portfolio Demo Customer',
-            bookId: book.id,
-            quantity: 1,
-          }),
-        });
-      } catch (orderError) {
-        try {
-          await requestJson(`/api/inventory/${book.id}/release?quantity=1`, { method: 'POST' });
-        } catch {
-          throw new Error(`${orderError.message} Inventory compensation failed or its result is unknown; check inventory before retrying.`);
-        }
-        throw orderError;
-      }
-      setNotice(`Demo order created for “${book.title}”. Inventory was reserved.`);
+      // The orders service owns reservation and compensation. A fresh idempotency
+      // key per click makes an explicit retry safe without double-reserving.
+      await requestJson('/api/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': `demo-${crypto.randomUUID()}`,
+        },
+        body: JSON.stringify({
+          customerName: 'Portfolio Demo Customer',
+          bookId: book.id,
+          quantity: 1,
+        }),
+      });
+      setNotice(`Demo order created for “${book.title}”. Inventory was reserved by the orders service.`);
       loadData().catch(() => setError('Order was created, but the page could not refresh. Reload to see the latest stock and orders.'));
     } catch (err) {
       setError(err.message);

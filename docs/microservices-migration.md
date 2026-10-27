@@ -10,6 +10,7 @@ The repository now has three separately deployable Java 21/Spring Boot servicesâ
 
 - Catalog: `GET /api/catalog/books`, `GET /api/catalog/books/{id}`
 - Orders: `GET /api/orders`, `GET /api/orders/{id}`, `POST /api/orders` with `customerName`, `bookId`, and `quantity`
+- Orders: `GET /api/orders`, `GET /api/orders/{id}`, `POST /api/orders`, `DELETE /api/orders/{id}`, `POST /api/checkout` (requires `Idempotency-Key`, routes through Nginx to the orders service)
 - Inventory: `GET /api/inventory`, `GET /api/inventory/{bookId}`, `POST /api/inventory/{bookId}/reserve?quantity=1`, `POST /api/inventory/{bookId}/release?quantity=1`
 
 The Orders service validates basic order input. Inventory rejects invalid quantities and insufficient stock. These are learning-grade APIs; order creation does not yet orchestrate an atomic stock reservation or payment.
@@ -96,4 +97,4 @@ Use a unique secret password in real environments. The in-chart PostgreSQL workl
 
 ## Remaining migration work
 
-This is a stronger staged microservices migration, but it is not production-complete. Catalog, Orders and Inventory are independently deployable and own separate databases. Order creation does not yet reserve stock transactionally; customer identity, payment/checkout, inter-service authentication, retries/idempotency, distributed tracing, contract testing and production database operations remain future work.
+This is a stronger staged microservices migration, but it is not production-complete. Catalog, Orders and Inventory are independently deployable and own separate databases. Checkout now runs in the orders service (`POST /api/checkout`), which reserves stock, compensates on failure and uses an `Idempotency-Key` to make retries safe; see `docs/microservices-delivery.md` for its limits. Customer identity, authentication/authorization, payment processing, automatic reconciliation of interrupted checkouts, distributed tracing, contract testing and production database operations remain future work.

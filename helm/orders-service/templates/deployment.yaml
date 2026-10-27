@@ -32,6 +32,8 @@ spec:
           env:
             - name: SERVER_PORT
               value: "8082"
+            - name: INVENTORY_SERVICE_URL
+              value: {{ .Values.inventory.url | quote }}
             - name: SPRING_DATASOURCE_URL
               value: "jdbc:postgresql://{{ .Values.database.host }}:5432/{{ .Values.database.name }}"
             - name: SPRING_DATASOURCE_USERNAME

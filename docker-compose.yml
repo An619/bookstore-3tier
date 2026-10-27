@@ -99,6 +99,7 @@ services:
     image: bookstore-orders-service:local
     environment:
       SERVER_PORT: "8082"
+      INVENTORY_SERVICE_URL: http://inventory-service:8083
       SPRING_DATASOURCE_URL: jdbc:postgresql://orders-database:5432/ordersdb
       SPRING_DATASOURCE_USERNAME: serviceuser
       SPRING_DATASOURCE_PASSWORD: ${ORDERS_DB_PASSWORD:-local-orders-change-me}

@@ -16,6 +16,7 @@ charts for a microservices-only cluster; `helm/bookstore` is the legacy chart.
 - **Catalog domain:** Java 21 + Spring Boot Catalog Service with its own PostgreSQL database.
 - **Orders domain:** Java 21 + Spring Boot Orders Service with its own PostgreSQL database and order API.
 - **Inventory domain:** Java 21 + Spring Boot Inventory Service with its own PostgreSQL database, stock query, reserve and release endpoints.
+- **Checkout:** the orders service owns `POST /api/checkout`; it reserves stock, creates the order, compensates on failure and rejects duplicate retries via an `Idempotency-Key` header.
 - **Legacy API:** Node.js + Express is retained under the optional `legacy` Compose profile, on direct port 5000 only.
 - **Data tier:** PostgreSQL.
 - **Local runtime:** Docker Compose with health-gated dependencies and a persistent development database volume.

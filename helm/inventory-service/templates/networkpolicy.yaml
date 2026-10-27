@@ -13,6 +13,9 @@ spec:
     - from:
         - podSelector:
             matchLabels: {app.kubernetes.io/name: bookstore-frontend}
+        # Orders reserves/releases stock during server-side checkout.
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: orders-service}
       ports: [{port: 8083}]
     {{- if .Values.networkPolicy.metricsNamespace }}
     - from:

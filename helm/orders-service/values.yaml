@@ -5,6 +5,8 @@ image:
   pullPolicy: IfNotPresent
 service:
   port: 8082
+inventory:
+  url: http://inventory-service:8083
 database:
   host: orders-service-postgres
   name: ordersdb
