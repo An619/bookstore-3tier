@@ -100,8 +100,9 @@ Rendered charts make this explicit with a `storage-mode:` marker, and
 `sh scripts/check-charts.sh` verifies all three profiles.
 
 With `ephemeral`, a database pod restart **destroys its data**: the smoke test
-and demo orders disappear, and the init script re-seeds the sample rows. That is
-acceptable for a practice cluster; do not rely on it. With `pvc`, no
+and demo orders disappear, and Flyway re-runs the migrations and re-seeds the
+sample rows on the next start. That is acceptable for a practice cluster; do
+not rely on it. With `pvc`, no
 StorageClass is created for you: install EFS CSI, Longhorn or similar, or run
 `kubectl apply -f deploy/eks/optional/ebs-storageclass.yaml` **only** if you
 deliberately enabled EBS.

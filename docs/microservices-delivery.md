@@ -174,9 +174,13 @@ helm upgrade --install orders-service helm/orders-service -n bookstore \
   `replicas x maximumPoolSize` below the server's connection limit.
 - The Secret must already exist (username/password keys); the chart never
   creates credentials for an external database.
-- Services run with `ddl-auto=validate`, so a managed database must be created
-  with the schema in `database/*-init.sql` (applied by your migration tooling,
-  not at startup).
+- The services apply their own Flyway migrations at startup and run with
+  `ddl-auto=validate`. Against a managed database set
+  `FLYWAY_ENABLED=true` (default) and either let the service migrate, or run
+  `flyway migrate` from CI with the same migrations and set
+  `spring.flyway.enabled=false` at runtime. Snapshots taken *after* the
+  migrations are the reference schema; `database/*-init.sql` remains only for
+  the moment-zero local database.
 - Managed providers give backups/PITR, failover and encryption; the scripts in
   `scripts/database-backup.sh` are for the lab only. Follow
   `docs/runbooks/postgres-backup-restore.md` for restore drills.
