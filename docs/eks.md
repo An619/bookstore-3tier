@@ -10,7 +10,7 @@ destroy everything when finished.
 | Step | Command | Notes |
 | --- | --- | --- |
 | Review planned changes | `make eks-plan` | No changes; requires a filled `terraform.tfvars` |
-| Create cluster + ECR | `make eks-apply` | VPC, EKS, managed nodes, 5 ECR repos, EBS CSI driver |
+| Create cluster + ECR | `make eks-apply` | VPC, EKS, managed nodes, 5 ECR repos, EBS CSI driver. Type the cluster name to confirm; set `EKS_AUTO_APPROVE=true` to skip (CI only) |
 | Push images | `make eks-images` | Four images tagged with the 12-character commit SHA |
 | Install workloads | `make eks-deploy` | gp3 StorageClass, database Secrets, Helm releases from ECR |
 | Reviewed GitOps manifest | `make eks-release` | Writes `deploy/releases/bookstore-lab.json` for Argo CD |
@@ -18,7 +18,15 @@ destroy everything when finished.
 | Tear down | `make eks-destroy` | Terraform destroy; type the cluster name to confirm |
 
 Requirements: `aws` (configured credentials), `terraform`, `kubectl`, `helm`,
-`docker`, `git`, `python3`.
+`docker`, `git`, `python3`. `make eks-apply` refuses to run without
+`terraform/eks/terraform.tfvars`, and requires you to type the cluster name
+because it starts billing.
+
+> If you applied an earlier revision of this Terraform, ECR repository names
+> changed from `<project>-<environment>/<service>` to
+> `<project>-<environment>-<service>`. `make eks-plan` will show the old
+> repositories being replaced; recreate and re-push images, or keep the old names
+> and pass `--repository-prefix` values that match them.
 
 ## First-time setup on your machine
 
@@ -108,6 +116,8 @@ after recreating.
 ## Troubleshooting
 
 - `Unable to locate credentials` — run `aws sts get-caller-identity` first.
+- `AWS_REGION` must match `aws_region` in `terraform.tfvars`; the scripts use it
+  to build ECR host names.
 - `kubectl` points at the wrong cluster — `make eks-apply` writes the kubeconfig
   entry; check `kubectl config current-context`.
 - Pods `ImagePullBackOff` — the tag is the current commit; rerun

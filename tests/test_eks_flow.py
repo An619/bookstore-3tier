@@ -66,10 +66,15 @@ class EksFlowTest(unittest.TestCase):
             path = self.bin / name
             path.write_text(body)
             path.chmod(0o755)
+        # Work on a private copy of the Terraform directory.
+        self.tf_dir = self.root / 'tf'
+        shutil.copytree(ROOT / 'terraform/eks', self.tf_dir)
+        (self.tf_dir / 'terraform.tfvars').unlink(missing_ok=True)
         self.env = dict(os.environ, PATH=f'{self.bin}:/usr/bin:/bin',
                         EKS_TEST_LOG=str(self.log),
                         LAB_TOOLS_DIR=str(self.root / 'tools'),
                         EKS_TEST_SECRETS=str(self.root / 'secrets-exist'),
+                        EKS_TF_DIR=str(self.tf_dir),
                         EKS_SECRETS_FILE=str(self.root / 'eks/secrets.env'),
                         AWS_REGION='ap-south-1', EKS_CLUSTER='bookstore-lab-eks')
 
@@ -171,6 +176,9 @@ exit 0
         tags = [app['spec']['source']['helm']['parameters'][1]['value'] for app in manifest['items']]
         self.assertEqual({self.revision()}, set(tags))
 
+    def test_terraform_paths_are_overridable_for_testing(self):
+        self.assertIn('EKS_TF_DIR', (ROOT / 'scripts/eks.sh').read_text())
+
     def test_destroy_requires_exact_confirmation(self):
         result = self.run_eks('destroy', stdin='yes\n')
         self.assertNotEqual(0, result.returncode)
@@ -180,15 +188,38 @@ exit 0
         self.log.write_text('')
         result = self.run_eks('destroy', stdin='bookstore-lab-eks\n')
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertTrue(any('terraform -chdir=terraform/eks destroy' in c for c in self.calls()))
+        self.assertTrue(any(f'terraform -chdir={self.tf_dir} destroy' in c for c in self.calls()))
 
-    def test_apply_is_explicit_about_billing_and_runs_terraform(self):
-        result = self.run_eks('apply')
+    def test_apply_requires_matching_confirmation(self):
+        (self.tf_dir / 'terraform.tfvars').write_text('aws_region = "ap-south-1"\n')
+        result = self.run_eks('apply', stdin='yes\n')
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('nothing was created', result.stderr)
+
+    def test_apply_refuses_without_tfvars(self):
+        result = self.run_eks('apply', stdin='bookstore-lab-eks\n')
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('terraform.tfvars is missing', result.stderr)
+        self.assertFalse(any(' apply' in c for c in self.calls()))
+
+    def test_apply_runs_terraform_after_confirmation(self):
+        self.assertFalse((ROOT / 'terraform/eks/terraform.tfvars').exists(),
+                         'terraform.tfvars must never be committed')
+        (self.tf_dir / 'terraform.tfvars').write_text('aws_region = "ap-south-1"\n')
+        result = self.run_eks('apply', stdin='bookstore-lab-eks\n')
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn('billable AWS resources', result.stdout)
         calls = self.calls()
-        self.assertTrue(any('terraform -chdir=terraform/eks init' in c for c in calls))
-        self.assertTrue(any('terraform -chdir=terraform/eks apply' in c for c in calls))
+        self.assertTrue(any(f'terraform -chdir={self.tf_dir} init' in c for c in calls))
+        self.assertTrue(any(f'terraform -chdir={self.tf_dir} apply' in c for c in calls))
+
+    def test_apply_supports_non_interactive_approval(self):
+        (self.tf_dir / 'terraform.tfvars').write_text('aws_region = "ap-south-1"\n')
+        result = subprocess.run(['sh', str(ROOT / 'scripts/eks.sh'), 'apply'], cwd=ROOT,
+                                env=dict(self.env, EKS_AUTO_APPROVE='true'),
+                                capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue(any(' apply' in c for c in self.calls()))
 
 
 class ReleasePrefixTest(unittest.TestCase):

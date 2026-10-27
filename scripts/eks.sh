@@ -24,7 +24,7 @@ environment=${EKS_ENVIRONMENT:-lab}
 revision=$(git rev-parse --short=12 HEAD)
 tools_dir=${LAB_TOOLS_DIR:-.tools}
 secrets_file=${EKS_SECRETS_FILE:-$tools_dir/eks/secrets.env}
-tf_dir=terraform/eks
+tf_dir=${EKS_TF_DIR:-terraform/eks}
 action=${1:-status}
 
 info() { printf '==> %s\n' "$*"; }
@@ -42,6 +42,22 @@ registry() {
     || die 'AWS credentials are not configured (aws sts get-caller-identity failed).'
   [ -n "$account" ] || die 'Could not determine the AWS account.'
   echo "$account.dkr.ecr.$region.amazonaws.com"
+}
+
+# A subshell cannot abort the parent on failure, so callers validate the result.
+require_registry() {
+  value=$(registry) || exit 1
+  case "$value" in
+    ''|*[!0-9a-z.-]*) die 'Could not resolve the ECR registry for this account.' ;;
+  esac
+  echo "$value"
+}
+
+confirm_apply() {
+  [ "${EKS_AUTO_APPROVE:-false}" = true ] && return 0
+  printf 'Type %s to create billable AWS resources in %s: ' "$cluster" "$region"
+  read -r confirmation
+  [ "$confirmation" = "$cluster" ] || die 'Confirmation did not match; nothing was created.'
 }
 
 # ECR repositories are created by Terraform; fail early with a clear message.
@@ -89,7 +105,7 @@ ensure_secrets() {
 
 helm_deploy() {
   need helm
-  reg=$(registry)
+  reg=$(require_registry)
   check_repositories "$reg"
   prefix="$project-$environment-"
   info "Deploying commit $revision from $reg"
@@ -112,7 +128,9 @@ case "$action" in
     ;;
   apply)
     need terraform
+    [ -f "$tf_dir/terraform.tfvars" ] || die "$tf_dir/terraform.tfvars is missing. Copy terraform.tfvars.example and set the EKS version and your IP /32."
     info 'This creates billable AWS resources: VPC, EKS nodes, NAT gateway and ECR repositories.'
+    confirm_apply
     terraform -chdir="$tf_dir" init -input=false
     terraform -chdir="$tf_dir" apply -input=false -auto-approve
     kubeconfig
@@ -151,7 +169,7 @@ case "$action" in
     info 'Run: sh scripts/eks.sh status'
     ;;
   release)
-    reg=$(registry)
+    reg=$(require_registry)
     prefix="$project-$environment-"
     output=${EKS_RELEASE_OUTPUT:-deploy/releases/bookstore-$environment.json}
     python3 scripts/prepare-release.py --registry "$reg" --repository-prefix "$prefix" \
