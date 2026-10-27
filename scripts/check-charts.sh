@@ -15,29 +15,34 @@ fail() {
   failures=$((failures + 1))
 }
 
+# POSIX sh has no local variables: prefix everything so callers' variables
+# (like the chart loop variable) are never overwritten.
 lint() {
-  chart=$1
-  helm lint "$chart" > "$work/lint.log" 2>&1 || {
+  _lint_chart=$1
+  helm lint "$_lint_chart" > "$work/lint.log" 2>&1 || {
     sed 's/^/[helm lint] /' "$work/lint.log" >&2
-    fail "helm lint failed for $chart"
+    fail "helm lint failed for $_lint_chart"
   }
 }
 
 # render NAME CHART [extra --set ...]; then assert a pattern is present/absent.
 render() {
-  name=$1 chart=$2 expected=$3 forbidden=${4:-}
+  _name=$1
+  _chart=$2
+  _expected=$3
+  _forbidden=${4:-}
   shift 4
-  out="$work/$name.yaml"
-  if ! helm template "$name" "$chart" --namespace bookstore "$@" > "$out" 2> "$work/$name.err"; then
-    sed 's/^/[helm template] /' "$work/$name.err" >&2
-    fail "helm template failed for $chart ($name)"
+  _out="$work/$_name.yaml"
+  if ! helm template "$_name" "$_chart" --namespace bookstore "$@" > "$_out" 2> "$work/$_name.err"; then
+    sed 's/^/[helm template] /' "$work/$_name.err" >&2
+    fail "helm template failed for $_chart ($_name)"
     return 0
   fi
-  if [ -n "$expected" ] && ! grep -q -- "$expected" "$out"; then
-    fail "$chart ($name): expected to find '$expected'"
+  if [ -n "$_expected" ] && ! grep -q -- "$_expected" "$_out"; then
+    fail "$_chart ($_name): expected to find '$_expected'"
   fi
-  if [ -n "$forbidden" ] && grep -q -- "$forbidden" "$out"; then
-    fail "$chart ($name): did not expect '$forbidden'"
+  if [ -n "$_forbidden" ] && grep -q -- "$_forbidden" "$_out"; then
+    fail "$_chart ($_name): did not expect '$_forbidden'"
   fi
 }
 
