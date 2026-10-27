@@ -52,8 +52,9 @@ creates the `bookstore-pipeline` job. Then run `make ci-run` to execute it.
    `make lab-light` steps for the browser VM, plus what cannot be practised there.
 2. **EKS** — `docs/eks.md`: fill `terraform/eks/terraform.tfvars`, then
    `make eks-plan`, `eks-apply`, `eks-images`, `eks-deploy`, `eks-status`, and
-   `eks-destroy` when finished. Terraform now also installs the EBS CSI driver,
-   which is what makes the database volumes bind on EKS.
+   `eks-destroy` when finished. No EBS is required: the default
+   `EKS_DB_STORAGE=ephemeral` runs the databases without volumes, and `pvc` or
+   `external` give you durable options.
 
 ## Things you still have to decide
 

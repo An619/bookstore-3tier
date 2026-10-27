@@ -71,5 +71,5 @@ make ci-reset      # only if you started the CI lab
 
 ## Where to go next
 
-`docs/eks.md` covers the AWS path: Terraform, ECR push, secrets, EBS storage and
-the load balancer.
+`docs/eks.md` covers the AWS path: Terraform, ECR push, database secrets, the
+load balancer, and the three storage options (no EBS needed).
