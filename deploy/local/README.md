@@ -1,113 +1,90 @@
 # Local learning lab (kind + Helm or Argo CD, optional Jenkins/SonarQube)
 
-Runs on your workstation; it is **not** a production design and creates no cloud
-resources. The sandboxed agent cannot execute these steps because it has no
-Docker runtime.
+Everything here runs on your workstation. It creates no cloud resources and
+commits no secrets. The sandboxed agent cannot run it (no Docker runtime), so the
+scripts are validated statically and by unit tests, not end to end.
 
-## Prerequisites
+Start with `docs/QUICKSTART.md`; this page explains what the automation does.
 
-Docker Engine or Docker Desktop with Compose v2, `kind`, `kubectl`, `helm` 3,
-`git`, `python3` and `openssl`. Allow roughly 6–8 GB free memory and 10 GB disk.
-Verify tools and the Docker daemon:
+## What `make lab` automates
 
-```sh
-sh scripts/preflight.sh
-```
+| Step | Detail |
+| --- | --- |
+| Tools | Uses your `kind` if present, otherwise downloads a pinned, SHA-256 verified binary into `.tools/bin`. Helm runs from its pinned container image unless installed. `kubectl` is optional. |
+| Cluster | Creates the single-node `bookstore-lab` kind cluster and maps host `8080` (override with `--port`) to the frontend NodePort `30080`, so no port-forward is needed. |
+| Images | Builds `bookstore-{frontend,catalog,orders,inventory}:local` from your working tree and loads them into the node. |
+| Secrets | Generates random database passwords into `deploy/local/.secrets/lab.env` (mode 0600, git-ignored) and passes them to Helm with `--set-file`, so they never appear in the process list. Reruns reuse the same passwords. |
+| Deploy | `helm upgrade --install` for the four charts into the `bookstore` namespace, with `--wait`. |
+| Verify | Runs `scripts/smoke-test.py`: catalog/inventory/orders readiness, inventory validation, idempotent checkout, replay check, cleanup and routing. |
 
-## Deploy the application to a disposable kind cluster
+Re-running `make lab` rebuilds images, reloads them and upgrades the releases.
+`make lab-down` deletes the cluster and therefore all lab data.
 
-```sh
-sh deploy/local/bootstrap.sh                 # Helm install (deterministic)
-sh deploy/local/bootstrap.sh --argocd        # Argo CD install + automated sync
-sh deploy/local/bootstrap.sh --argocd --revision arena/22830f5b-bookstore-3tier
-```
+## Argo CD instead of Helm
 
-The script:
+`make lab-argocd` (requires `kubectl`) installs Argo CD v3.5.6, creates the
+database Secrets, and applies the applications from
+`deploy/local/argocd/applications.yaml` with automated sync of your current
+branch. The repository is public, so no Git credentials are needed. The chart
+release names are pinned to the Service DNS names Nginx expects.
 
-1. Creates a `bookstore-lab` kind cluster (or reuses it).
-2. Builds the four images from your working tree and loads them into kind.
-3. Creates the `bookstore` namespace and randomly generated database Secrets.
-   Existing Secrets are preserved on reruns.
-4. Installs the charts with Helm, or installs Argo CD v3.5.6 and four
-   Applications that automatically sync the chosen branch.
-5. Waits for deployments, then runs the integration smoke test through a
-   temporary port-forward. It creates one diagnostic order and restores stock.
+The lab manifests enable automated sync/prune **for a disposable cluster only**.
+The `argocd/*.yaml` files in the repository root stay manual-sync.
 
-Then open the app:
+## Jenkins and SonarQube
 
 ```sh
-kubectl -n bookstore port-forward svc/bookstore-frontend 8080:80
-# http://localhost:8080
+make lab-ci
 ```
 
-Argo CD is optional. Its UI is at <https://localhost:8443> after
-`kubectl -n argocd port-forward svc/argocd-server 8443:443`; the initial admin
-password is in `argocd-initial-admin-secret`. Argo CD must reach GitHub to read
-the chart sources and the branch must contain this work. `deploy/local/argocd/
-applications.yaml` enables automated sync **for this disposable lab only**;
-the repository `argocd/*.yaml` files remain manual-sync.
+`deploy/local/ci/lab.sh` performs the whole setup:
 
-Images are built locally with tag `local` and never pushed. Pods use
-`IfNotPresent`, so a rebuilt image requires re-running the build/load step
-(`kind load docker-image ...`) and restarting the deployments.
+1. Generates `deploy/local/ci/.env` (mode 0600) with the Docker socket group, a
+   Jenkins admin password and a SonarQube database password.
+2. Starts SonarQube and waits for it.
+3. Uses the SonarQube API to set the admin password, create project
+   `bookstore-3tier`, create the **Bookstore lab gate** (new-code coverage),
+   assign it to the project and mint a token.
+4. Stores the token in `.env` and starts Jenkins, which reads it through
+   configuration-as-code: admin user, SonarQube server, `sonarqube-token`
+   credential, no setup wizard.
+5. An init script creates the `bookstore-pipeline` job for your branch.
+
+`make ci-run` triggers that job. `make ci-status` prints the URLs and the
+generated passwords; `make ci-reset` deletes the CI volumes and `.env` so the
+next `make lab-ci` starts clean.
+
+### Security warnings for the CI lab
+
+- Mounting `/var/run/docker.sock` gives the Jenkins controller effective root
+  access to your machine. Use a disposable machine or Docker Desktop you can
+  reset.
+- Ports 8085 (Jenkins) and 9000 (SonarQube) are published on all interfaces;
+  keep them on a trusted network.
+- If plugin installation fails while the image builds, the container still
+  starts: configure credentials and the job manually. The build output contains
+  a warning.
+- The pipeline's Compose stage uses ports 8080-8083, which clash with the app
+  lab. Stop one with `make lab-down` or `make ci-down` first.
+- These images are pinned by tag, not digest. Do not reuse this setup beyond a
+  local lab without pinning digests and adding authentication in front of
+  Jenkins.
 
 ## Ingress and TLS (optional)
 
-The kind config maps host ports 8080/8443. Install an ingress controller
-compatible with kind, then set values from `deploy/examples/frontend-values.yaml`
-(real host name, an ingress class, and a TLS Secret you created). A local
-self-signed certificate proves TLS wiring only; do not treat it as trusted.
-Without ingress, use `kubectl port-forward` as above.
-
-## Optional Jenkins and SonarQube lab
-
-```sh
-cd deploy/local/ci
-cp .env.example .env
-# Linux only: set DOCKER_GID to the value printed by:
-stat -c %g /var/run/docker.sock
-docker compose up -d --build
-```
-
-- Jenkins: <http://localhost:8085> (unlock with the initial admin password shown
-  by `docker compose logs jenkins`).
-- SonarQube: <http://localhost:9000> (`admin`/`admin` on first login; change it).
-
-Then create a **multibranch pipeline** job pointing at your fork/repository with
-the root `Jenkinsfile`. Add credentials `sonarqube-token` (created in SonarQube
-under My Account → Security) and set `SONAR_HOST_URL` as an agent/global
-environment variable. Enable `SONARQUBE_ENABLED` when you want the quality gate
-to block builds. Set thresholds for project `bookstore-3tier` in SonarQube.
-Docker Hub publishing needs `dockerhub-creds` and `PUBLISH_IMAGES`; it only runs
-on `main`.
-
-**Security warning:** mounting `/var/run/docker.sock` gives the Jenkins
-controller effective root control of the host. Use only on a disposable
-machine. Without the socket the pipeline's Compose stages cannot run. If Chrome
-or the browser cannot reach Jenkins, keep it bound to localhost and do not
-publish it.
+Host ports 8443 and node port 30443 are reserved for an ingress controller's
+HTTPS listener. Install a kind-compatible controller, then set
+`deploy/examples/frontend-values.yaml` values (host, ingress class, TLS Secret).
+A locally generated certificate proves the wiring only; it is not trusted.
 
 ## Troubleshooting
 
-- `kind create cluster` fails: Docker must be running and the machine needs
-  enough memory; delete stale clusters with `kind get clusters`.
-- Pods stay `ImagePullBackOff`: run the bootstrap build/load again; the chart
-  image names and `local` tag must match.
-- Pods stay `Pending`: kind's default StorageClass must provision the database
-  persistent volume claims; check `kubectl -n bookstore get pvc`.
-- `port-forward` connection refused: frontend pods are not ready yet; inspect
-  `kubectl -n bookstore get pods` and `kubectl -n bookstore describe pod ...`.
-- NetworkPolicy is disabled by default in the lab; enable it only after
-  confirming your CNI enforces it.
-- Argo CD Applications stay `OutOfSync`/`Unknown`: the cluster needs outbound
-  HTTPS to GitHub, and the branch must exist.
-
-## Teardown
-
-```sh
-kind delete cluster --name bookstore-lab     # deletes all lab PVC data
-cd deploy/local/ci && docker compose down -v # deletes Jenkins/Sonar data
-```
-
-The smoke test creates a demo order; the cluster is disposable. Never run it
-against production.
+- `Docker daemon is not reachable` — start Docker; `docker info` must work.
+- Pods `ImagePullBackOff` — rerun `make lab` so images are rebuilt/loaded; the
+  chart tag is `local` with `IfNotPresent`.
+- Pods `Pending` — the kind default StorageClass must provision the database
+  PVCs; check `make lab-status`.
+- `make lab-argocd` hangs — the cluster needs outbound HTTPS to GitHub, and the
+  branch must contain this work.
+- `make lab-ci` fails at SonarQube — first boot is slow; rerun the command, it
+  reuses volumes and only creates what is missing.

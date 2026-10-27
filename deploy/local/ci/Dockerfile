@@ -1,5 +1,5 @@
-# LAB ONLY: a Jenkins controller image with the tools this pipeline needs.
-# Tool images are pinned by tag; pin by digest for anything longer-lived.
+# LAB ONLY: Jenkins controller with the tools this pipeline uses.
+# Pin these images by digest for anything longer-lived than a local lab.
 FROM node:22-bookworm-slim AS node
 FROM maven:3.9-eclipse-temurin-21 AS maven
 FROM docker:28-cli AS dockercli
@@ -16,6 +16,18 @@ RUN ln -s /usr/share/maven/bin/mvn /usr/local/bin/mvn \
     && apt-get update \
     && apt-get install -y --no-install-recommends curl git python3 \
     && rm -rf /var/lib/apt/lists/*
+
+# Pre-install plugins so configuration-as-code works on first boot. If plugin
+# resolution fails the image still builds and Jenkins falls back to manual setup.
+RUN jenkins-plugin-cli --plugins \
+      configuration-as-code git workflow-aggregator credentials-binding \
+      junit sonar matrix-auth \
+    || echo "WARNING: plugin installation failed; configure Jenkins manually."
+
+COPY casc/jenkins.yaml /usr/share/jenkins/ref/casc/jenkins.yaml
+COPY init.groovy.d/10-pipeline-job.groovy /usr/share/jenkins/ref/init.groovy.d/10-pipeline-job.groovy
+
+ENV CASC_JENKINS_CONFIG=/usr/share/jenkins/ref/casc/jenkins.yaml
 # The controller mounts the host Docker socket for this lab; see the README for
-# the substantial security trade-off and the Docker group-ID requirement.
+# the security trade-off and the Docker group-ID requirement.
 USER jenkins

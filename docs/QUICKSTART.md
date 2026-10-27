@@ -1,0 +1,67 @@
+# Quick start: the fewest possible steps
+
+Two commands get the whole application running locally. Prerequisites: Docker
+Engine or Docker Desktop (running), `git`, `python3` and `curl`. `kind` is
+downloaded automatically (checksum-verified); Helm runs through its pinned
+container image if you do not have it; `kubectl` is optional.
+
+```sh
+git clone https://github.com/An619/bookstore-3tier.git
+cd bookstore-3tier
+make lab
+```
+
+`make lab` creates a disposable kind cluster, builds the four images, generates
+database passwords (kept out of Git), deploys the charts, waits for readiness,
+runs an end-to-end checkout smoke test, and prints <http://localhost:8080>.
+
+Add Jenkins and SonarQube with one more command (first run pulls several
+images and can take 5-10 minutes):
+
+```sh
+make lab-ci
+```
+
+That single command generates all passwords, starts SonarQube, creates the
+project, a new-code coverage quality gate and an API token, starts Jenkins with
+configuration-as-code (admin user, SonarQube server, token credential) and
+creates the `bookstore-pipeline` job. Then run `make ci-run` to execute it.
+
+## Everyday commands
+
+| Command | What it does |
+| --- | --- |
+| `make lab` | Bring the application up (or update it after code changes) |
+| `make lab-status` / `make lab-logs` | Inspect the cluster / follow logs |
+| `make lab-down` | Delete the lab cluster and its data |
+| `make lab-argocd` | Deploy through Argo CD instead of Helm (`kubectl` required) |
+| `make lab-ci` | Start Jenkins + SonarQube (or reuse existing data) |
+| `make ci-run` | Trigger the pipeline once |
+| `make ci-status` | Show the lab URLs and generated passwords |
+| `make ci-reset` | Delete Jenkins/SonarQube data and start over |
+| `make verify` | Run the tests that need no Docker (Python, frontend, Maven) |
+
+## Things you still have to decide
+
+These are choices or credentials that a repository cannot supply:
+
+1. **Where it runs.** The lab is a single local node. For a shared cluster,
+   install Argo CD, create the three database Secrets and a StorageClass, then
+   apply the reviewed `deploy/releases/bookstore.json` (see
+   `docs/microservices-delivery.md`).
+2. **Image registry.** Images are built locally for the lab. Publishing needs
+   your Docker Hub or ECR credentials in Jenkins plus `PUBLISH_IMAGES`.
+3. **DNS and TLS.** Point a real host name at an ingress controller and supply a
+   certificate; the example values use `bookstore.example.com`.
+4. **Authentication.** The app has no login. Do not expose it publicly before
+   adding authentication/authorization.
+
+## Troubleshooting
+
+- `Docker daemon is not reachable` — start Docker Desktop/Engine and retry.
+- Port 8080 already in use — `sh scripts/lab.sh up --port 8090`.
+- Failed while pulling images — retry; the lab reuses the cluster and volumes.
+- Jenkins pipeline port clash — the pipeline's Compose stage uses ports
+  8080-8083, the same as the app lab. Stop one with `make lab-down` or
+  `make ci-down` before running the other.
+- Start over: `make lab-down && make ci-reset`, then `make lab`.

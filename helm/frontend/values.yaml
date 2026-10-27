@@ -6,6 +6,8 @@ image:
 service:
   type: ClusterIP
   port: 80
+  # Set with type=NodePort to expose a fixed port (used by the local kind lab).
+  nodePort: ""
 resources:
   requests:
     cpu: 50m

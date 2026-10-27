@@ -9,16 +9,32 @@ services:
       - "50000:50000"
     environment:
       SONAR_HOST_URL: http://sonarqube:9000
-      JAVA_OPTS: -Djenkins.install.runSetupWizard=true
+      JENKINS_URL: http://localhost:8085/
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:?run deploy/local/ci/lab.sh to generate .env}
+      SONAR_TOKEN: ${SONAR_TOKEN:?run deploy/local/ci/lab.sh to create the Sonar token}
+      JENKINS_REPO_URL: ${JENKINS_REPO_URL:-https://github.com/An619/bookstore-3tier.git}
+      JENKINS_BRANCH: ${JENKINS_BRANCH:-main}
+      JENKINS_JOB_NAME: ${JENKINS_JOB_NAME:-bookstore-pipeline}
+      # Skip the setup wizard: users and credentials come from configuration-as-code.
+      JAVA_OPTS: >-
+        -Djenkins.install.runSetupWizard=false
+        -Djenkins.model.Jenkins.slaveAgentPort=50000
+        -Dhudson.security.csrf.GlobalCrumbIssuerConfiguration.DISABLE_CSRF_PROTECTION=false
     volumes:
       - jenkins-home:/var/jenkins_home
       - /var/run/docker.sock:/var/run/docker.sock
-    # Set DOCKER_GID=$(stat -c %g /var/run/docker.sock) in deploy/local/ci/.env
+    # Set automatically by lab.sh: the group that owns the Docker socket.
     group_add:
-      - "${DOCKER_GID:?set DOCKER_GID in deploy/local/ci/.env}"
+      - "${DOCKER_GID:?run deploy/local/ci/lab.sh to detect the Docker group ID}"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/login >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 30
     depends_on:
       sonarqube:
-        condition: service_started
+        condition: service_healthy
 
   sonarqube:
     # Pin a digested SonarQube image for any use beyond a disposable lab.
@@ -28,11 +44,17 @@ services:
     environment:
       SONAR_JDBC_URL: jdbc:postgresql://sonar-db:5432/sonar
       SONAR_JDBC_USERNAME: sonar
-      SONAR_JDBC_PASSWORD: ${SONAR_DB_PASSWORD:-lab-sonar-password-change-me}
+      SONAR_JDBC_PASSWORD: ${SONAR_DB_PASSWORD:?run deploy/local/ci/lab.sh to generate .env}
       SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
     volumes:
       - sonar-data:/opt/sonarqube/data
       - sonar-extensions:/opt/sonarqube/extensions
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/api/system/status | grep -q '\"status\":\"UP\"' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      start_period: 90s
+      retries: 40
     depends_on:
       sonar-db:
         condition: service_healthy
@@ -42,7 +64,7 @@ services:
     environment:
       POSTGRES_DB: sonar
       POSTGRES_USER: sonar
-      POSTGRES_PASSWORD: ${SONAR_DB_PASSWORD:-lab-sonar-password-change-me}
+      POSTGRES_PASSWORD: ${SONAR_DB_PASSWORD:?run deploy/local/ci/lab.sh to generate .env}
     volumes:
       - sonar-db:/var/lib/postgresql/data
     healthcheck:

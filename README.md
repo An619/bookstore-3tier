@@ -4,7 +4,15 @@ A hands-on DevOps portfolio lab with independent Catalog, Orders and Inventory m
 
 ## Microservices quick start
 
-See [Microservices build and delivery](docs/microservices-delivery.md) for the
+```sh
+make lab        # kind cluster + images + deploy + smoke test -> http://localhost:8080
+make lab-ci     # add Jenkins and SonarQube, fully configured
+```
+
+Only Docker, `git`, `python3` and `curl` are required: `kind` is downloaded
+(checksum-verified) and Helm runs from a pinned container image. See
+[docs/QUICKSTART.md](docs/QUICKSTART.md) for the short version and
+[Microservices build and delivery](docs/microservices-delivery.md) for the
 current Maven → Jenkins → SonarQube → Docker → Argo CD → Kubernetes workflow.
 The default Compose stack no longer needs the legacy Node API; enable it explicitly
 with `--profile legacy` when needed. Use `helm/frontend` plus the three service

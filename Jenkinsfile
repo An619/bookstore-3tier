@@ -140,6 +140,17 @@ pipeline {
                     helm lint ./helm/inventory-service
                     helm template inventory-service ./helm/inventory-service --namespace bookstore > /tmp/inventory-rendered.yaml
                     test -s /tmp/inventory-rendered.yaml
+                    for chart in catalog-service orders-service inventory-service; do
+                      helm template "$chart" "./helm/$chart" --namespace bookstore \
+                        --set database.createSecret=true --set database.password=lab-only > "/tmp/$chart-lab.yaml"
+                      grep -q 'kind: Secret' "/tmp/$chart-lab.yaml"
+                      if helm template "$chart" "./helm/$chart" --set database.createSecret=true >/dev/null 2>&1; then
+                        echo "ERROR: $chart must refuse createSecret without a password"; exit 1
+                      fi
+                    done
+                    helm template bookstore-frontend ./helm/frontend --namespace bookstore \
+                      --set service.type=NodePort --set service.nodePort=30080 > /tmp/frontend-lab.yaml
+                    grep -q 'nodePort: 30080' /tmp/frontend-lab.yaml
                 '''
             }
         }

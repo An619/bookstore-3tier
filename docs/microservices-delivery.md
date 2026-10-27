@@ -78,11 +78,22 @@ with versioned migrations.
 
 ## Local Kubernetes lab
 
-`deploy/local/README.md` contains a disposable kind-based lab: local image
-build/load, generated database Secrets, Helm install or Argo CD sync, port-forward
-access and a smoke test. It also offers an optional Jenkins/SonarQube Compose
-stack for the pipeline (with an explicit host-Docker security warning). These
-commands run on your workstation and require Docker/kind/kubectl/Helm.
+Two commands run everything locally (details in `docs/QUICKSTART.md` and
+`deploy/local/README.md`):
+
+```sh
+make lab      # tools + kind cluster + images + deploy + smoke test
+make lab-ci   # plus Jenkins and SonarQube, configured automatically
+```
+
+`scripts/lab.sh` downloads a checksum-verified `kind`, runs Helm from a pinned
+container image when Helm is absent, generates database passwords into an
+ignored 0600 file, deploys with `--set-file` (passwords never appear in the
+process list) and exposes the app on a fixed NodePort. `deploy/local/ci/lab.sh`
+provisions SonarQube (project, quality gate, token) through its API and starts
+Jenkins with configuration-as-code plus the `bookstore-pipeline` job, so no
+setup wizard or manual credential entry is needed. `kubectl` is optional and
+only required for Argo CD, logs and status.
 
 ## Jenkins and SonarQube
 
@@ -108,6 +119,10 @@ not match the existing ECR repository names: use explicit Helm image overrides
 for those repositories).
 
 ## Reviewed GitOps deployment
+
+For a local cluster all of this is automated: `make lab` deploys with Helm and
+`make lab-argocd` does the Argo CD variant. The steps below apply to a shared or
+remote cluster.
 
 1. Install Argo CD separately in the cluster and configure access to this Git repo
    and the image registry. Configure registry pull credentials on the namespace's

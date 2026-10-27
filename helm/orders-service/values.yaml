@@ -8,6 +8,10 @@ service:
 inventory:
   url: http://inventory-service:8083
 database:
+  # LAB ONLY: set createSecret=true to let this chart create the credential
+  # Secret. Shared clusters should use an externally managed Secret instead.
+  createSecret: false
+  password: ""
   host: orders-service-postgres
   name: ordersdb
   username: serviceuser

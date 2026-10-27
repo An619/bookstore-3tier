@@ -48,3 +48,7 @@ backups/
 # Local lab credentials
 .env
 deploy/local/ci/.env
+
+# Local lab: downloaded tools and generated secrets must never be committed
+.tools/
+deploy/local/.secrets/
