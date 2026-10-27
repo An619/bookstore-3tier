@@ -161,6 +161,22 @@ jobs:
           curl --fail --silent http://localhost:8080/api/orders | grep -q 'CREATED'
           curl --fail --silent http://localhost:8080/api/inventory | grep -q 'availableQuantity'
 
+      - name: Confirm Flyway applied every migration
+        run: |
+          set -eu
+          # The databases start empty in Compose, so a service only becomes ready
+          # once its own migrations have run.
+          for target in "catalog-database cataloguser catalogdb" "orders-database serviceuser ordersdb" "inventory-database serviceuser inventorydb"; do
+            set -- $target
+            version=$(docker compose exec -T "$1" psql -U "$2" -d "$3" -tAc \
+              "SELECT max(version) FROM flyway_schema_history WHERE success" | tr -d '[:space:]')
+            if [ "$version" != "2" ]; then
+              echo "::error::$1 has Flyway version '$version', expected 2"
+              docker compose exec -T "$1" psql -U "$2" -d "$3" -c "SELECT * FROM flyway_schema_history" || true
+              exit 1
+            fi
+          done
+
       - name: Exercise demo order and stock compensation
         run: python3 scripts/smoke-test.py
 

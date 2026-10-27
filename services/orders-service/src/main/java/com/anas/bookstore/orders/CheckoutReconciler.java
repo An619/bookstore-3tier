@@ -41,13 +41,14 @@ public class CheckoutReconciler {
     private final OrdersRepository orders;
     private final InventoryClient inventory;
     private final ObjectProvider<PaymentGateway> gateways;
+    private final CheckoutMetrics metrics;
     private final boolean enabled;
     private final int maxCycles;
     private final boolean paymentsEnabled;
 
     public CheckoutReconciler(CheckoutAttemptRepository attempts, OutboxRepository outbox,
                               OrdersRepository orders, InventoryClient inventory,
-                              ObjectProvider<PaymentGateway> gateways,
+                              ObjectProvider<PaymentGateway> gateways, CheckoutMetrics metrics,
                               @Value("${checkout.reconciler.enabled:true}") boolean enabled,
                               @Value("${checkout.reconciler.max-cycles:3}") int maxCycles,
                               @Value("${payments.enabled:false}") boolean paymentsEnabled) {
@@ -56,6 +57,7 @@ public class CheckoutReconciler {
         this.orders = orders;
         this.inventory = inventory;
         this.gateways = gateways;
+        this.metrics = metrics;
         this.enabled = enabled;
         this.maxCycles = maxCycles;
         this.paymentsEnabled = paymentsEnabled;
@@ -182,6 +184,7 @@ public class CheckoutReconciler {
         });
         attempt.complete(202, "Reservation confirmed during reconciliation");
         attempts.save(attempt);
+        metrics.checkoutConfirmed();
         event.done();
         outbox.save(event);
         log.info("Reconciliation confirmed checkout {}", attempt.getIdempotencyKey());
@@ -194,6 +197,7 @@ public class CheckoutReconciler {
         });
         attempt.fail(502, reason);
         attempts.save(attempt);
+        metrics.checkoutCancelled();
         if (event != null) {
             event.failed(reason);
             outbox.save(event);

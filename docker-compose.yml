@@ -18,6 +18,8 @@ services:
     restart: unless-stopped
 
   catalog-database:
+    # The schema is created by the catalog service's Flyway migrations, so the
+    # containers start empty on purpose: this path is exercised by CI.
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: catalogdb
@@ -25,7 +27,6 @@ services:
       POSTGRES_PASSWORD: ${CATALOG_DB_PASSWORD:-local-catalog-only-change-me}
     volumes:
       - catalog_data:/var/lib/postgresql/data
-      - ./database/catalog-init.sql:/docker-entrypoint-initdb.d/01-catalog-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U cataloguser -d catalogdb"]
       interval: 5s
@@ -68,7 +69,6 @@ services:
       POSTGRES_PASSWORD: ${ORDERS_DB_PASSWORD:-local-orders-change-me}
     volumes:
       - orders_data:/var/lib/postgresql/data
-      - ./database/orders-service-init.sql:/docker-entrypoint-initdb.d/01-orders-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U serviceuser -d ordersdb"]
       interval: 5s
@@ -85,7 +85,6 @@ services:
       POSTGRES_PASSWORD: ${INVENTORY_DB_PASSWORD:-local-inventory-change-me}
     volumes:
       - inventory_data:/var/lib/postgresql/data
-      - ./database/inventory-service-init.sql:/docker-entrypoint-initdb.d/01-inventory-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U serviceuser -d inventorydb"]
       interval: 5s
@@ -166,6 +165,22 @@ services:
       timeout: 3s
       retries: 10
       start_period: 25s
+    networks: [bookstore-net]
+    restart: unless-stopped
+
+  # Optional local identity provider for testing JWT authorization.
+  # `docker compose --profile auth up -d` (or `make auth`).
+  keycloak:
+    profiles: [auth]
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm", "--http-port=8090", "--hostname-strict=false"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-local-keycloak-admin}
+    volumes:
+      - ./deploy/local/auth/bookstore-realm.json:/opt/keycloak/data/import/bookstore-realm.json:ro
+    ports:
+      - "8090:8090"
     networks: [bookstore-net]
     restart: unless-stopped
 

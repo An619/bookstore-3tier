@@ -6,7 +6,7 @@ CI_LAB := sh deploy/local/ci/lab.sh
 
 .DEFAULT_GOAL := help
 
-.PHONY: help migrate-legacy lab lab-light lab-ci lab-ci-run lab-url lab-status lab-logs lab-down eks-plan eks-apply eks-images eks-deploy eks-release eks-status eks-uninstall eks-destroy ci-status ci-run ci-down ci-reset test verify frontend preflight
+.PHONY: help migrate-legacy auth auth-token lab lab-light lab-ci lab-ci-run lab-url lab-status lab-logs lab-down eks-plan eks-apply eks-images eks-deploy eks-release eks-status eks-uninstall eks-destroy ci-status ci-run ci-down ci-reset test verify frontend preflight
 
 migrate-legacy: ## Copy legacy books into the catalog DB (dry run first: DRY=1)
 	@if [ "$(DRY)" = "1" ]; then \
@@ -14,6 +14,13 @@ migrate-legacy: ## Copy legacy books into the catalog DB (dry run first: DRY=1)
 	else \
 		python3 scripts/migrate-legacy.py --apply; \
 	fi
+
+auth: ## Start the local Keycloak dev identity provider (port 8090)
+	docker compose --profile auth up -d keycloak
+	@printf 'Keycloak: http://localhost:8090 (admin / $${KEYCLOAK_ADMIN_PASSWORD:-local-keycloak-admin})\nGet a token with: make auth-token\n'
+
+auth-token: ## Print a demo bearer token from the local Keycloak
+	@sh scripts/auth-token.sh
 
 help: ## Show the available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)

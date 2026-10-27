@@ -122,6 +122,11 @@ issuing tokens is the identity provider's job - there is no login screen here.
 - The orders service exports the two numbers that matter for the checkout
   pipeline: `checkout_outbox_pending` and
   `checkout_attempts_needs_reconciliation`.
+- `monitoring/bookstore-dashboard.json` is a Grafana dashboard for the three
+  services (outbox backlog, reconciliation, availability, 5xx ratio, p95,
+  restarts) and `monitoring/slo-rules.yaml` adds availability and latency SLIs
+  plus the checkout success ratio (`bookstore_checkout_confirmed_total` /
+  `bookstore_checkout_cancelled_total`, exported by the orders service).
 - `alerts.enabled=true` (orders chart) renders a PrometheusRule with
   `CheckoutOutboxBacklog`, `CheckoutReconciliationStuck` and
   `BookstoreApiServerErrors`; the response procedure is
@@ -240,51 +245,64 @@ cd frontend && npm ci && npm run dev
 Vite proxies domain APIs server-side to service ports 8081–8083; browsers use
 same-origin URLs. Kubernetes uses the same domain paths through Nginx.
 
-## Checkout schema upgrade
+## Database schema and versioned migrations
 
-Orders persists idempotency outcomes in `checkout_attempts` and pending work in
-`checkout_outbox`. The init scripts (`database/orders-service-init.sql` and the
-orders chart ConfigMap) only run on a **fresh** PostgreSQL data directory. For an
-existing database or persistent volume, apply this once before deploying the new
-orders image:
+Each service owns its schema and applies it with **Flyway** at startup
+(`spring.flyway.enabled=true`, migrations in
+`services/<name>/src/main/resources/db/migration`). Hibernate only validates
+(`ddl-auto=validate`), so a migration that drifts from the entities fails the
+deployment instead of silently reshaping tables.
 
-```sql
-CREATE TABLE IF NOT EXISTS checkout_attempts (
-  idempotency_key VARCHAR(64) PRIMARY KEY,
-  order_id BIGINT,
-  status VARCHAR(32) NOT NULL,
-  response_status INTEGER NOT NULL,
-  message VARCHAR(200)
-);
-
-CREATE TABLE IF NOT EXISTS checkout_outbox (
-  id BIGSERIAL PRIMARY KEY,
-  aggregate_key VARCHAR(64) NOT NULL,
-  event_type VARCHAR(32) NOT NULL,
-  book_id BIGINT NOT NULL,
-  quantity INTEGER NOT NULL,
-  status VARCHAR(16) NOT NULL,
-  attempts INTEGER NOT NULL,
-  reconcile_cycles INTEGER NOT NULL DEFAULT 0,
-  last_error VARCHAR(200)
-);
+```text
+V1__catalog_schema.sql      tables
+V2__seed_demo_catalog.sql   idempotent demo data
 ```
 
-Inventory needs its ledger table as well:
+Rules for adding one:
 
-```sql
-CREATE TABLE IF NOT EXISTS inventory_operations (
-  idempotency_key VARCHAR(64) PRIMARY KEY,
-  operation VARCHAR(16) NOT NULL,
-  book_id BIGINT NOT NULL,
-  quantity INTEGER NOT NULL,
-  resulting_quantity INTEGER NOT NULL
-);
+1. never edit an applied migration - add `V3__...sql` with the next number;
+2. keep every statement re-runnable (`IF NOT EXISTS`, `WHERE NOT EXISTS`),
+   because lab databases may have been created from the older
+   `database/*-init.sql` scripts;
+3. `spring.flyway.baseline-on-migrate=true` baselines such a database at version
+   0 and then applies the migrations;
+4. the Compose stack ships **no** init scripts for the three service databases:
+   CI proves the migrations work by starting empty databases and asserting
+   `flyway_schema_history` reached the latest version.
+
+`FLYWAY_ENABLED=false` exists only for troubleshooting. The `database/*.sql`
+files stay in the repository as the reference schema for teams that create a
+managed database by hand; the migrations are authoritative.
+
+## Local identity provider (Keycloak)
+
+`make auth` starts Keycloak on <http://localhost:8090> with the `bookstore` realm
+imported from `deploy/local/auth/bookstore-realm.json`. It is a Compose
+`auth` profile, off by default.
+
+```sh
+make auth                 # start Keycloak (admin / local-keycloak-admin)
+make auth-token           # print a demo bearer token
+export TOKEN=$(make -s auth-token)
 ```
 
-The service validates its schema at startup (`ddl-auto=validate`), so it fails
-fast instead of silently creating tables. A real deployment should manage this
-with versioned migrations.
+To make the services enforce it (Compose):
+
+```sh
+SECURITY_JWT_ENABLED=true \
+SECURITY_JWT_JWK_SET_URI=http://keycloak:8090/realms/bookstore/protocol/openid-connect/certs \
+  docker compose up -d orders-service inventory-service
+```
+
+The realm grants `orders.read`, `orders.write`, `inventory.read` and
+`inventory.write` as default client scopes, and declares a service account for
+`orders-service`. In the browser, store the token with
+`sessionStorage.setItem('bookstoreToken', '<token>')`; the frontend forwards it
+on every request.
+
+Lab only: the demo user password is public and the JWKS URI trusts any token
+signed by that realm (no issuer check). In a real environment use
+`security.jwt.issuer-uri` and a managed identity provider.
 
 ## Local Kubernetes lab
 

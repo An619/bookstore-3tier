@@ -29,6 +29,7 @@ public class CheckoutWorker {
     private final InventoryClient inventory;
     private final CatalogClient catalog;
     private final ObjectProvider<PaymentGateway> gateways;
+    private final CheckoutMetrics metrics;
     private final boolean enabled;
     private final int maxAttempts;
     private final boolean paymentsEnabled;
@@ -37,6 +38,7 @@ public class CheckoutWorker {
     public CheckoutWorker(OutboxRepository outbox, OrdersRepository orders,
                           CheckoutAttemptRepository attempts, InventoryClient inventory,
                           CatalogClient catalog, ObjectProvider<PaymentGateway> gateways,
+                          CheckoutMetrics metrics,
                           @Value("${checkout.worker.enabled:true}") boolean enabled,
                           @Value("${checkout.worker.max-attempts:5}") int maxAttempts,
                           @Value("${payments.enabled:false}") boolean paymentsEnabled,
@@ -47,6 +49,7 @@ public class CheckoutWorker {
         this.inventory = inventory;
         this.catalog = catalog;
         this.gateways = gateways;
+        this.metrics = metrics;
         this.enabled = enabled;
         this.maxAttempts = maxAttempts;
         this.paymentsEnabled = paymentsEnabled;
@@ -218,6 +221,7 @@ public class CheckoutWorker {
         attempts.findById(event.getAggregateKey()).ifPresent(attempt -> {
             attempt.complete(202, message);
             attempts.save(attempt);
+            metrics.checkoutConfirmed();
         });
     }
 
@@ -230,6 +234,7 @@ public class CheckoutWorker {
         attempts.findById(event.getAggregateKey()).ifPresent(attempt -> {
             attempt.fail(status, reason);
             attempts.save(attempt);
+            metrics.checkoutCancelled();
         });
     }
 

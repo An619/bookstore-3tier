@@ -1,0 +1,72 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: bookstore-slo
+  namespace: bookstore
+  labels:
+    # Must match the Prometheus Operator rule selector for your release.
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: bookstore.slo
+      interval: 30s
+      rules:
+        # Availability SLI: share of non-5xx responses across the three services.
+        - record: bookstore:availability:ratio_5m
+          expr: |
+            1 - (
+              sum(rate(http_server_requests_seconds_count{namespace="bookstore", status=~"5.."}[5m]))
+              /
+              clamp_min(sum(rate(http_server_requests_seconds_count{namespace="bookstore"}[5m])), 0.001)
+            )
+        - record: bookstore:availability:ratio_1h
+          expr: |
+            1 - (
+              sum(rate(http_server_requests_seconds_count{namespace="bookstore", status=~"5.."}[1h]))
+              /
+              clamp_min(sum(rate(http_server_requests_seconds_count{namespace="bookstore"}[1h])), 0.001)
+            )
+        # Latency SLI: p95 of successful requests.
+        - record: bookstore:latency_p95:5m
+          expr: |
+            histogram_quantile(
+              0.95,
+              sum by (le) (rate(http_server_requests_seconds_bucket{namespace="bookstore", status!~"5.."}[5m]))
+            )
+        # Checkout SLI: confirmed checkouts over all settled checkouts.
+        - record: bookstore:checkout_success:ratio_30m
+          expr: |
+            sum(rate(bookstore_checkout_confirmed_total[30m]))
+            /
+            clamp_min(
+              sum(rate(bookstore_checkout_confirmed_total[30m])) + sum(rate(bookstore_checkout_cancelled_total[30m])),
+              0.001
+            )
+        - alert: BookstoreAvailabilitySloBreach
+          expr: bookstore:availability:ratio_1h < 0.995
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: Bookstore availability is below the 99.5% objective
+            description: >-
+              One hour of non-5xx responses is under 99.5%. Check the failing
+              service with the Bookstore services dashboard.
+            runbook_url: https://github.com/An619/bookstore-3tier/blob/main/docs/runbooks/kubernetes-troubleshooting.md
+        - alert: BookstoreLatencySloBreach
+          expr: bookstore:latency_p95:5m > 1.5
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: Bookstore p95 latency is above 1.5s
+            description: Inspect database latency and the checkout outbox backlog.
+        - alert: CheckoutSuccessSloBreach
+          expr: bookstore:checkout_success:ratio_30m < 0.95
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: Fewer than 95% of checkouts are confirming
+            description: Check payments, inventory reachability and reconciliation.
+            runbook_url: https://github.com/An619/bookstore-3tier/blob/main/docs/runbooks/checkout-reconciliation.md

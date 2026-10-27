@@ -90,6 +90,23 @@ helm upgrade --install orders-service helm/orders-service -n bookstore \
 covers the whole checkout. Ingestion, storage and retention belong to your
 tracing backend.
 
+## Dashboards and SLOs
+
+- `bookstore-dashboard.json` - import into Grafana (dashboards -> import) and
+  pick your Prometheus data source when prompted. It charts the checkout
+  backlog, reconciliation queue, availability, 5xx ratio, p95 latency and pod
+  restarts.
+- `slo-rules.yaml` - recording rules for `bookstore:availability:ratio_5m/1h`,
+  `bookstore:latency_p95:5m` and `bookstore:checkout_success:ratio_30m`, plus
+  alerts for breaching them. It needs the Prometheus Operator CRDs:
+
+```sh
+kubectl apply -f monitoring/slo-rules.yaml
+```
+
+Treat the objectives as a starting point (99.5% availability, p95 < 1.5 s, 95%
+of checkouts confirming) and agree real targets with the service owners.
+
 ## What to monitor
 - Deployment availability, pod restarts, CPU/memory saturation and pending PVCs.
 - API liveness/readiness, HTTP error rate and JVM/HTTP metrics from `/actuator/prometheus`.
