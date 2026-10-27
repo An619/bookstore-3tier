@@ -37,6 +37,7 @@ creates the `bookstore-pipeline` job. Then run `make ci-run` to execute it.
 | `make lab-argocd` | Deploy through Argo CD instead of Helm (`kubectl` required) |
 | `make lab-ci` | Start Jenkins + SonarQube (or reuse existing data) |
 | `make ci-run` | Trigger the pipeline once |
+| `make lab-ci-run` | Do both of the above in one command |
 | `make ci-status` | Show the lab URLs and generated passwords |
 | `make ci-reset` | Delete Jenkins/SonarQube data and start over |
 | `make verify` | Run the tests that need no Docker (Python, frontend, Maven) |

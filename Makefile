@@ -6,7 +6,7 @@ CI_LAB := sh deploy/local/ci/lab.sh
 
 .DEFAULT_GOAL := help
 
-.PHONY: help lab lab-ci lab-url lab-status lab-logs lab-down ci-status ci-run ci-down ci-reset test verify frontend preflight
+.PHONY: help lab lab-ci lab-ci-run lab-url lab-status lab-logs lab-down ci-status ci-run ci-down ci-reset test verify frontend preflight
 
 help: ## Show the available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -19,6 +19,10 @@ lab-ci: ## Application lab plus Jenkins and SonarQube (slow on first run)
 
 lab-argocd: ## Deploy through Argo CD instead of Helm (needs kubectl)
 	$(LAB) up --argocd
+
+lab-ci-run: ## Start Jenkins/SonarQube (if needed) and trigger the pipeline
+	$(LAB) up --ci
+	$(CI_LAB) run
 
 lab-url: ## Print the application URL
 	$(LAB) url

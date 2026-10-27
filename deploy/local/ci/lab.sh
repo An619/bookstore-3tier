@@ -153,12 +153,26 @@ case "$action" in
   run)
     ensure_env
     wait_http http://localhost:8085/login Jenkins 30
-    code=$(curl -s -o /dev/null -w '%{http_code}' -u "admin:$JENKINS_ADMIN_PASSWORD" \
-      -X POST http://localhost:8085/job/bookstore-pipeline/build)
+    # Jenkins rejects POSTs without a CSRF crumb; fetch one when the endpoint
+    # exists (it is absent only if CSRF protection is disabled).
+    crumb=$(curl -fsS -u "admin:$JENKINS_ADMIN_PASSWORD" \
+      http://localhost:8085/crumbIssuer/api/json 2>/dev/null || true)
+    if [ -n "$crumb" ]; then
+      header=$(printf '%s' "$crumb" | python3 -c \
+        'import json,sys; d=json.load(sys.stdin); print(d["crumbRequestField"]+":"+d["crumb"])') \
+        || lab_die 'Could not read the Jenkins CSRF crumb.'
+    fi
+    if [ -n "${header:-}" ]; then
+      code=$(curl -s -o /dev/null -w '%{http_code}' -u "admin:$JENKINS_ADMIN_PASSWORD" \
+        -H "$header" -X POST http://localhost:8085/job/bookstore-pipeline/build)
+    else
+      code=$(curl -s -o /dev/null -w '%{http_code}' -u "admin:$JENKINS_ADMIN_PASSWORD" \
+        -X POST http://localhost:8085/job/bookstore-pipeline/build)
+    fi
     case "$code" in
       201) lab_info 'Pipeline queued: http://localhost:8085/job/bookstore-pipeline/' ;;
       404) lab_die 'Job bookstore-pipeline not found. Check Jenkins: http://localhost:8085' ;;
-      403) lab_die 'Trigger was rejected. Open Jenkins and start the job manually.' ;;
+      403) lab_die 'Trigger rejected. Open Jenkins and start the job manually.' ;;
       *) lab_die "Unexpected Jenkins response: HTTP $code" ;;
     esac
     ;;

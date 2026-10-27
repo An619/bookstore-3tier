@@ -21,6 +21,7 @@ exit 0
 FAKE_CURL = '''#!/bin/sh
 echo "curl $*" >> "$LAB_TEST_LOG"
 case "$*" in
+  *crumbIssuer*) echo '{"crumbRequestField":"Jenkins-Crumb","crumb":"abc123"}' ;;
   *"%{http_code}"*) echo 201 ;;
   *) exit 0 ;;
 esac
@@ -106,7 +107,16 @@ class CiLabFlowTest(unittest.TestCase):
         self.assertEqual(0, self.run_lab('up').returncode)
         result = self.run_lab('run')
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn('/job/bookstore-pipeline/build', self.log.read_text())
+        calls = self.log.read_text().splitlines()
+        self.assertTrue(any('/job/bookstore-pipeline/build' in c for c in calls))
+        # The build POST must carry the CSRF crumb and never print the password.
+        build = next(c for c in calls if '/job/bookstore-pipeline/build' in c)
+        self.assertIn('Jenkins-Crumb:abc123', build)
+        admin_password = dict(
+            line.split('=', 1) for line in self.env_file().read_text().splitlines() if '=' in line
+        )['JENKINS_ADMIN_PASSWORD']
+        self.assertNotIn(admin_password, result.stdout)
+        self.assertNotIn(admin_password, result.stderr)
 
     def test_reset_removes_env_and_volumes(self):
         self.assertEqual(0, self.run_lab('up').returncode)
