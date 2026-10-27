@@ -88,7 +88,10 @@ class InventoryClientContractTest {
         JsonNode documented = endpoint(method, template);
         assertTrue(documented.get("path").asText().endsWith(action),
             "contract path must end with " + action);
-        assertEquals(documented.get("path").asText().replace("{bookId}", "1"), actualPath);
+        // Fill the template with the book id this call actually used.
+        String[] segments = actualPath.split("/");
+        assertEquals(5, segments.length, "unexpected call path: " + actualPath);
+        assertEquals(documented.get("path").asText().replace("{bookId}", segments[3]), actualPath);
         assertTrue(documented.get("query").has("quantity"), "contract must document the quantity parameter");
         assertTrue(documented.get("requestHeaders").has("Idempotency-Key"),
             "contract must document the idempotency header");

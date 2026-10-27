@@ -50,17 +50,20 @@ class CheckoutReconcilerTest {
         outbox.deleteAll();
     }
 
-    /** Submits a checkout and exhausts the worker's retries against failing inventory. */
-    private long exhaustedCheckout(String key) throws Exception {
+    /** Runs one worker batch per queued 500, so every attempt fails. */
+    private void failTheWorker() {
         for (int attempt = 0; attempt < WORKER_ATTEMPTS; attempt++) {
             INVENTORY.respondWith(500);
+            worker.processPending();
         }
+    }
+
+    /** Submits a checkout and exhausts the worker's retries against failing inventory. */
+    private long exhaustedCheckout(String key) throws Exception {
         mvc.perform(post("/api/checkout").contentType(MediaType.APPLICATION_JSON)
                 .header("Idempotency-Key", key).content(BODY))
             .andExpect(status().isAccepted());
-        for (int attempt = 0; attempt < WORKER_ATTEMPTS; attempt++) {
-            worker.processPending();
-        }
+        failTheWorker();
         CheckoutAttempt attempt = attempts.findById(key).orElseThrow();
         assertEquals(CheckoutAttempt.NEEDS_RECONCILIATION, attempt.getStatus(),
             "the worker must hand the checkout to the reconciler");
@@ -118,17 +121,20 @@ class CheckoutReconcilerTest {
         String key = "reconcile-key-0003";
         long orderId = exhaustedCheckout(key);
 
-        // Cycle 1: requeued, worker fails again.
-        reconciler.reconcilePending();
-        assertEquals(1, eventFor(key).getReconcileCycles().intValue());
-        for (int attempt = 0; attempt < WORKER_ATTEMPTS; attempt++) {
-            INVENTORY.respondWith(500);
-            worker.processPending();
+        // Each of the allowed cycles (checkout.reconciler.max-cycles=2) re-queues
+        // the checkout and the worker fails again.
+        for (int cycle = 1; cycle <= 2; cycle++) {
+            assertEquals(1, reconciler.reconcilePending());
+            assertEquals(cycle, eventFor(key).getReconcileCycles().intValue());
+            assertEquals(OutboxEvent.PENDING, eventFor(key).getStatus());
+            assertEquals(CheckoutAttempt.PENDING, attempts.findById(key).orElseThrow().getStatus());
+            failTheWorker();
+            assertEquals(CheckoutAttempt.NEEDS_RECONCILIATION,
+                attempts.findById(key).orElseThrow().getStatus());
         }
-        assertEquals(CheckoutAttempt.NEEDS_RECONCILIATION, attempts.findById(key).orElseThrow().getStatus());
 
-        // Cycle 2 reaches checkout.reconciler.max-cycles=2: the ledger proves no
-        // stock is held, so cancelling is safe and needs nobody.
+        // The final cycle: the ledger still proves no stock is held, so
+        // cancelling is safe and needs nobody.
         assertEquals(1, reconciler.reconcilePending());
 
         assertEquals(OrderRecord.CANCELLED, statusOf(orderId));
@@ -136,6 +142,7 @@ class CheckoutReconcilerTest {
         assertEquals(CheckoutAttempt.FAILED, attempt.getStatus());
         assertEquals(502, attempt.getResponseStatus().intValue());
         assertEquals(OutboxEvent.FAILED, eventFor(key).getStatus());
+        // The counter stopped at the limit; no further retry was queued.
         assertEquals(2, eventFor(key).getReconcileCycles().intValue());
     }
 
