@@ -106,6 +106,10 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://orders-database:5432/ordersdb
       SPRING_DATASOURCE_USERNAME: serviceuser
       SPRING_DATASOURCE_PASSWORD: ${ORDERS_DB_PASSWORD:-local-orders-change-me}
+      # JWT enforcement is off for the lab; `make auth` + these two variables turn
+      # it on. See docs/microservices-delivery.md (Local identity provider).
+      SECURITY_JWT_ENABLED: ${SECURITY_JWT_ENABLED:-false}
+      SECURITY_JWT_JWK_SET_URI: ${SECURITY_JWT_JWK_SET_URI:-http://keycloak:8090/realms/bookstore/protocol/openid-connect/certs}
     ports:
       - "${ORDERS_PORT:-8082}:8082"
     depends_on:

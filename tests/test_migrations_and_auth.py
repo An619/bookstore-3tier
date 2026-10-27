@@ -106,6 +106,14 @@ class DevIdentityProviderTest(unittest.TestCase):
         self.assertIn('bookstore-realm.json', compose)
         self.assertIn('8090', compose)
 
+    def test_orders_service_reads_the_enforcement_switch_from_compose(self):
+        compose = (ROOT / 'docker-compose.yml').read_text()
+        self.assertIn('SECURITY_JWT_ENABLED: ${SECURITY_JWT_ENABLED:-false}', compose)
+        self.assertIn('SECURITY_JWT_JWK_SET_URI', compose)
+        ci = (ROOT / '.github/workflows/ci.yml').read_text()
+        self.assertIn('Enforce JWT with the local Keycloak realm', ci,
+                      'CI must prove the secured path against the real realm')
+
     def test_makefile_exposes_the_auth_shortcuts(self):
         makefile = (ROOT / 'Makefile').read_text()
         self.assertIn('auth:', makefile)

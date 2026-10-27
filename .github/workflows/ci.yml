@@ -181,6 +181,50 @@ jobs:
       - name: Exercise demo order and stock compensation
         run: python3 scripts/smoke-test.py
 
+      - name: Enforce JWT with the local Keycloak realm
+        run: |
+          set -eu
+          docker compose --profile auth up -d keycloak
+          # Wait for the realm import, then read a real token with the repo script.
+          token=""
+          for _ in $(seq 1 60); do
+            if token=$(sh scripts/auth-token.sh 2>/dev/null); then
+              [ -n "$token" ] && break
+            fi
+            sleep 3
+          done
+          if [ -z "$token" ]; then
+            echo "::error::Keycloak did not issue a token for the demo user"
+            docker compose logs --tail=80 keycloak || true
+            exit 1
+          fi
+
+          SECURITY_JWT_ENABLED=true \
+          SECURITY_JWT_JWK_SET_URI=http://keycloak:8090/realms/bookstore/protocol/openid-connect/certs \
+            docker compose up -d --no-deps orders-service
+          for _ in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8082/actuator/health/readiness || true)
+            [ "$code" = "200" ] && break
+            sleep 3
+          done
+
+          anonymous=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8082/api/orders)
+          authorized=$(curl -s -o /tmp/orders.json -w '%{http_code}' \
+            -H "Authorization: Bearer $token" http://localhost:8082/api/orders)
+          echo "anonymous=$anonymous authorized=$authorized"
+          if [ "$anonymous" != "401" ]; then
+            echo "::error::the secured orders API answered '$anonymous' without a token, expected 401"
+            docker compose logs --tail=40 orders-service || true
+            exit 1
+          fi
+          if [ "$authorized" != "200" ] || ! grep -q 'CREATED' /tmp/orders.json; then
+            echo "::error::the demo token was rejected ('$authorized') or returned no orders"
+            docker compose logs --tail=40 orders-service || true
+            exit 1
+          fi
+          # Probes and metrics must stay public while enforcement is on.
+          curl --fail --silent http://localhost:8082/actuator/prometheus | grep -q 'checkout_outbox_pending'
+
       - name: Verify service database backup and isolated restores
         run: |
           sh scripts/database-backup.sh backups/ci

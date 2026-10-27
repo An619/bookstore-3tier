@@ -304,6 +304,11 @@ The realm grants `orders.read`, `orders.write`, `inventory.read` and
 `sessionStorage.setItem('bookstoreToken', '<token>')`; the frontend forwards it
 on every request.
 
+CI proves this path on every run: it starts the realm, reads a token with
+`scripts/auth-token.sh`, restarts the orders service with enforcement on and
+asserts `401` without a token, `200` with it, and that probes and metrics stay
+public. Jenkins covers the unsecured lab path only.
+
 Lab only: the demo user password is public and the JWKS URI trusts any token
 signed by that realm (no issuer check). In a real environment use
 `security.jwt.issuer-uri` and a managed identity provider.
