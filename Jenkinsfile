@@ -157,32 +157,39 @@ pipeline {
 
         stage('Compose integration smoke test') {
             steps {
-                sh 'COMPOSE_UP_LOG=compose-up.log sh scripts/compose-up.sh'
+                sh 'FRONTEND_PORT=18080 CATALOG_PORT=18081 ORDERS_PORT=18082 INVENTORY_PORT=18083 COMPOSE_UP_LOG=compose-up.log sh scripts/compose-up.sh'
                 sh '''
                     set -eu
+                    # The pipeline uses its own host ports so it never collides
+                    # with the local kind lab (8080-8083).
+                    FRONTEND_PORT=${FRONTEND_PORT:-18080}
+                    CATALOG_PORT=${CATALOG_PORT:-18081}
+                    ORDERS_PORT=${ORDERS_PORT:-18082}
+                    INVENTORY_PORT=${INVENTORY_PORT:-18083}
+                    export FRONTEND_PORT CATALOG_PORT ORDERS_PORT INVENTORY_PORT
                     attempt=0
-                    until curl --fail --silent http://localhost:8081/actuator/health/readiness | grep -q '"status":"UP"'; do
+                    until curl --fail --silent "http://localhost:$CATALOG_PORT/actuator/health/readiness" | grep -q '"status":"UP"'; do
                       attempt=$((attempt + 1))
                       if [ "$attempt" -ge 20 ]; then docker compose logs; exit 1; fi
                       sleep 3
                     done
-                    curl --fail --silent http://localhost:8080/ > /dev/null
-                    curl --fail --silent http://localhost:8080/api/catalog/books | grep -q "Kubernetes Basics"
-                    curl --fail --silent http://localhost:8081/api/catalog/books | grep -q "Kubernetes Basics"
+                    curl --fail --silent http://localhost:$FRONTEND_PORT/ > /dev/null
+                    curl --fail --silent http://localhost:$FRONTEND_PORT/api/catalog/books | grep -q "Kubernetes Basics"
+                    curl --fail --silent http://localhost:$CATALOG_PORT/api/catalog/books | grep -q "Kubernetes Basics"
                     attempt=0
-                    until curl --fail --silent http://localhost:8082/actuator/health/readiness | grep -q '"status":"UP"'; do
+                    until curl --fail --silent http://localhost:$ORDERS_PORT/actuator/health/readiness | grep -q '"status":"UP"'; do
                       attempt=$((attempt + 1)); if [ "$attempt" -ge 20 ]; then docker compose logs; exit 1; fi; sleep 3
                     done
                     attempt=0
-                    until curl --fail --silent http://localhost:8083/actuator/health/readiness | grep -q '"status":"UP"'; do
+                    until curl --fail --silent http://localhost:$INVENTORY_PORT/actuator/health/readiness | grep -q '"status":"UP"'; do
                       attempt=$((attempt + 1)); if [ "$attempt" -ge 20 ]; then docker compose logs; exit 1; fi; sleep 3
                     done
-                    curl --fail --silent http://localhost:8082/api/orders | grep -q "CREATED"
-                    curl --fail --silent http://localhost:8083/api/inventory | grep -q "availableQuantity"
-                    curl --fail --silent http://localhost:8080/api/orders | grep -q "CREATED"
-                    curl --fail --silent http://localhost:8080/api/inventory | grep -q "availableQuantity"
+                    curl --fail --silent http://localhost:$ORDERS_PORT/api/orders | grep -q "CREATED"
+                    curl --fail --silent http://localhost:$INVENTORY_PORT/api/inventory | grep -q "availableQuantity"
+                    curl --fail --silent http://localhost:$FRONTEND_PORT/api/orders | grep -q "CREATED"
+                    curl --fail --silent http://localhost:$FRONTEND_PORT/api/inventory | grep -q "availableQuantity"
                 '''
-                sh 'python3 scripts/smoke-test.py'
+                sh 'python3 scripts/smoke-test.py --base-url http://localhost:18080'
                 sh 'sh scripts/database-backup.sh backups/ci'
                 sh 'sh scripts/database-restore-test.sh backups/ci'
             }

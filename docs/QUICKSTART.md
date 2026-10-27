@@ -61,7 +61,6 @@ These are choices or credentials that a repository cannot supply:
 - `Docker daemon is not reachable` — start Docker Desktop/Engine and retry.
 - Port 8080 already in use — `sh scripts/lab.sh up --port 8090`.
 - Failed while pulling images — retry; the lab reuses the cluster and volumes.
-- Jenkins pipeline port clash — the pipeline's Compose stage uses ports
-  8080-8083, the same as the app lab. Stop one with `make lab-down` or
-  `make ci-down` before running the other.
+- Ports — the app lab uses 8080 and the Jenkins pipeline publishes the Compose
+  stack on 18080-18083, so both can run at the same time.
 - Start over: `make lab-down && make ci-reset`, then `make lab`.

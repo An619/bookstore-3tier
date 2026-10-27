@@ -64,8 +64,8 @@ next `make lab-ci` starts clean.
 - If plugin installation fails while the image builds, the container still
   starts: configure credentials and the job manually. The build output contains
   a warning.
-- The pipeline's Compose stage uses ports 8080-8083, which clash with the app
-  lab. Stop one with `make lab-down` or `make ci-down` first.
+- The pipeline publishes its Compose stack on 18080-18083, so it can run while
+  the kind lab keeps port 8080.
 - These images are pinned by tag, not digest. Do not reuse this setup beyond a
   local lab without pinning digests and adding authentication in front of
   Jenkins.

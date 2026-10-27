@@ -152,6 +152,17 @@ class LabScriptsTest(unittest.TestCase):
                 self.assertIn(variable, compose)
                 self.assertIn(variable, lab)
 
+    def test_compose_ports_are_overridable_and_pipeline_uses_its_own(self):
+        compose = (ROOT / 'docker-compose.yml').read_text()
+        for variable in ('FRONTEND_PORT', 'CATALOG_PORT', 'ORDERS_PORT', 'INVENTORY_PORT'):
+            self.assertIn(f'${{{variable}:-', compose)
+        jenkins = (ROOT / 'Jenkinsfile').read_text()
+        for port in ('18080', '18081', '18082', '18083'):
+            self.assertIn(port, jenkins)
+        # The pipeline must not fall back to the lab ports.
+        for stale in ('localhost:8080/', 'localhost:8081/', 'localhost:8082/', 'localhost:8083/'):
+            self.assertNotIn(stale, jenkins)
+
     def test_jcasc_references_only_provided_environment(self):
         casc = (ROOT / 'deploy/local/ci/casc/jenkins.yaml').read_text()
         compose = (ROOT / 'deploy/local/ci/docker-compose.yml').read_text()

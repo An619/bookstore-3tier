@@ -127,8 +127,8 @@ bookstore-3tier, and its token is already stored in Jenkins as sonarqube-token.
 Pipeline job "bookstore-pipeline" was created on first boot. Trigger it with:
   sh deploy/local/ci/lab.sh run
 
-Note: the pipeline's Compose stage publishes ports 8080-8083, which conflicts
-with the kind application lab. Stop one of them before running both.
+The pipeline publishes its Compose stack on ports 18080-18083, so it can run
+while the kind application lab keeps port 8080.
 TEXT
 }
 

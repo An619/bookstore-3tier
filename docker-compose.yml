@@ -104,7 +104,7 @@ services:
       SPRING_DATASOURCE_USERNAME: serviceuser
       SPRING_DATASOURCE_PASSWORD: ${ORDERS_DB_PASSWORD:-local-orders-change-me}
     ports:
-      - "8082:8082"
+      - "${ORDERS_PORT:-8082}:8082"
     depends_on:
       orders-database:
         condition: service_healthy
@@ -126,7 +126,7 @@ services:
       SPRING_DATASOURCE_USERNAME: serviceuser
       SPRING_DATASOURCE_PASSWORD: ${INVENTORY_DB_PASSWORD:-local-inventory-change-me}
     ports:
-      - "8083:8083"
+      - "${INVENTORY_PORT:-8083}:8083"
     depends_on:
       inventory-database:
         condition: service_healthy
@@ -148,7 +148,7 @@ services:
       SPRING_DATASOURCE_USERNAME: cataloguser
       SPRING_DATASOURCE_PASSWORD: ${CATALOG_DB_PASSWORD:-local-catalog-only-change-me}
     ports:
-      - "8081:8081"
+      - "${CATALOG_PORT:-8081}:8081"
     depends_on:
       catalog-database:
         condition: service_healthy
@@ -165,7 +165,7 @@ services:
     build: ./frontend
     image: bookstore-frontend:local
     ports:
-      - "8080:8080"
+      - "${FRONTEND_PORT:-8080}:8080"
     depends_on:
       catalog-service:
         condition: service_healthy
