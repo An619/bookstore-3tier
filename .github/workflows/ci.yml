@@ -112,7 +112,10 @@ jobs:
               --set database.storage=1Gi > "/tmp/$chart-light.yaml"
             grep -q 'memory: 128Mi' "/tmp/$chart-light.yaml"
           done
-          python3 -c "import yaml,sys; list(yaml.safe_load_all(open('deploy/eks/storageclass.yaml'))); print('storageclass ok')"
+          # Avoid a PyYAML dependency on the runner: assert the key fields.
+          grep -q 'kind: StorageClass' deploy/eks/storageclass.yaml
+          grep -q 'provisioner: ebs.csi.aws.com' deploy/eks/storageclass.yaml
+          grep -q 'encrypted: "true"' deploy/eks/storageclass.yaml
 
       - name: Build and start microservices stack
         env:
