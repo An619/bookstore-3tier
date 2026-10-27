@@ -48,12 +48,14 @@ render() {
 
 for chart in catalog-service orders-service inventory-service; do
   lint "helm/$chart"
-  render "$chart-default" "helm/$chart" 'kind: PersistentVolumeClaim' '' \
+  # StatefulSets declare volumeClaimTemplates; the PVCs themselves are created
+  # by the controller, so they never appear in rendered output.
+  render "$chart-default" "helm/$chart" 'volumeClaimTemplates:' 'emptyDir: {}' \
     --set database.createSecret=true --set database.password=lab-only
-  render "$chart-ephemeral" "helm/$chart" 'emptyDir: {}' 'kind: PersistentVolumeClaim' \
+  render "$chart-ephemeral" "helm/$chart" 'emptyDir: {}' 'volumeClaimTemplates:' \
     --set database.createSecret=true --set database.password=lab-only \
     --set database.persistence.enabled=false
-  render "$chart-storageclass" "helm/$chart" 'storageClassName: efs-sc' '' \
+  render "$chart-storageclass" "helm/$chart" 'storageClassName: "efs-sc"' 'emptyDir: {}' \
     --set database.createSecret=true --set database.password=lab-only \
     --set database.persistence.storageClassName=efs-sc
   render "$chart-external" "helm/$chart" 'kind: Deployment' 'kind: StatefulSet' \
