@@ -168,11 +168,12 @@ jobs:
           # once its own migrations have run.
           for target in "catalog-database cataloguser catalogdb" "orders-database serviceuser ordersdb" "inventory-database serviceuser inventorydb"; do
             set -- $target
-            version=$(docker compose exec -T "$1" psql -U "$2" -d "$3" -tAc \
-              "SELECT max(version) FROM flyway_schema_history WHERE success" | tr -d '[:space:]')
+            history=$(docker compose exec -T "$1" psql -U "$2" -d "$3" -tAc \
+              "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank" 2>&1 || true)
+            version=$(echo "$history" | tail -n 1 | tr -d '[:space:]')
             if [ "$version" != "2" ]; then
-              echo "::error::$1 has Flyway version '$version', expected 2"
-              docker compose exec -T "$1" psql -U "$2" -d "$3" -c "SELECT * FROM flyway_schema_history" || true
+              echo "::error::$1 Flyway history is '$history', expected V1 and V2 applied"
+              docker compose logs --tail=40 "${1%-database}-service" || true
               exit 1
             fi
           done

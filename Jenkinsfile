@@ -187,10 +187,11 @@ pipeline {
                     curl --fail --silent http://localhost:$ORDERS_PORT/api/orders | grep -q "CREATED"
                     # Checkout pipeline gauges must be scraped from the real container.
                     curl --fail --silent http://localhost:$ORDERS_PORT/actuator/prometheus | grep -q "checkout_outbox_pending"
-                    # Flyway must own the schema in a fresh database.
+                    # Flyway must own the schema in a fresh database: V2 is the
+                    # latest migration, so the last applied version has to be 2.
                     for target in "catalog-database cataloguser catalogdb" "orders-database serviceuser ordersdb" "inventory-database serviceuser inventorydb"; do
                       set -- $target
-                      docker compose exec -T "$1" psql -U "$2" -d "$3" -tAc "SELECT max(version) FROM flyway_schema_history WHERE success" | grep -qx 2
+                      docker compose exec -T "$1" psql -U "$2" -d "$3" -tAc "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank" | tail -n 1 | tr -d "[:space:]" | grep -qx 2
                     done
                     curl --fail --silent http://localhost:$INVENTORY_PORT/api/inventory | grep -q "availableQuantity"
                     curl --fail --silent http://localhost:$FRONTEND_PORT/api/orders | grep -q "CREATED"
