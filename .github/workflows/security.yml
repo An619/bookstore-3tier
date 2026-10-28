@@ -1,0 +1,109 @@
+name: Security scan
+
+# Image CVE scanning and SBOM generation.
+#
+# This runs on a schedule and on demand rather than on every pull request: the
+# base images (eclipse-temurin, nginx, postgres) gain CVEs without this
+# repository changing, and a PR should not turn red because of an upstream
+# advisory nobody in the diff introduced. Run it before a release, after a base
+# image bump, or when an advisory names one of these components.
+#
+# The pull-request pipeline still builds every image, so a broken Dockerfile is
+# caught there; this workflow answers "is what we ship vulnerable?".
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'   # Mondays, 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      fail-on:
+        description: 'Severity that fails the scan'
+        type: choice
+        options: [CRITICAL, HIGH, MEDIUM]
+        default: CRITICAL
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned so a scanner change never silently changes the result.
+  TRIVY_IMAGE: aquasec/trivy:0.57.1
+
+jobs:
+  scan:
+    name: Scan images and publish SBOMs
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set the severity gate
+        run: echo "FAIL_ON=${{ inputs['fail-on'] || 'CRITICAL' }}" >> "$GITHUB_ENV"
+
+      - name: Build the four images
+        run: |
+          set -eu
+          docker build -t bookstore/catalog-service:scan -f services/catalog-service/Dockerfile .
+          docker build -t bookstore/orders-service:scan -f services/orders-service/Dockerfile .
+          docker build -t bookstore/inventory-service:scan -f services/inventory-service/Dockerfile .
+          docker build -t bookstore/frontend:scan frontend
+
+      - name: Scan and generate SBOMs
+        run: |
+          set -eu
+          mkdir -p sbom reports
+          status=0
+          for image in catalog-service orders-service inventory-service frontend; do
+            echo "==> $image (all severities, table)"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" \
+              image --quiet --ignore-unfixed --severity CRITICAL,HIGH,MEDIUM \
+              "bookstore/$image:scan" | tee "reports/$image.txt" || true
+
+            echo "==> $image (CycloneDX SBOM)"
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$PWD/sbom:/out" \
+              "$TRIVY_IMAGE" image --quiet --format cyclonedx \
+              --output "/out/$image.cdx.json" "bookstore/$image:scan"
+
+            echo "==> $image (gate: $FAIL_ON with a fix available)"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" \
+              image --quiet --ignore-unfixed --severity "$FAIL_ON" --exit-code 1 \
+              "bookstore/$image:scan" || {
+                echo "::error::$image has $FAIL_ON vulnerabilities that have a fix"
+                status=1
+              }
+          done
+          exit "$status"
+
+      - name: Upload reports and SBOMs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            reports/
+            sbom/
+          retention-days: 30
+
+      - name: Explain the gate in the job summary
+        if: always()
+        run: |
+          {
+            echo "### Image security scan"
+            echo
+            echo "Severity gate: **$FAIL_ON** (unfixed CVEs are reported but do not fail)."
+            echo
+            echo "| Image | $FAIL_ON findings |"
+            echo "| --- | --- |"
+            for image in catalog-service orders-service inventory-service frontend; do
+              count=$(grep -c "^Total: " "reports/$image.txt" 2>/dev/null || echo '?')
+              echo "| $image | see \`reports/$image.txt\` |"
+            done
+            echo
+            echo "SBOMs are CycloneDX JSON in the \`sbom/\` artifact."
+          } >> "$GITHUB_STEP_SUMMARY"

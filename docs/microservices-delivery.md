@@ -278,6 +278,49 @@ Rules for adding one:
 files stay in the repository as the reference schema for teams that create a
 managed database by hand; the migrations are authoritative.
 
+## Availability, backups and supply chain
+
+**PodDisruptionBudget** - every chart renders one by default. With one replica it
+is `maxUnavailable: 1` (a drain can proceed, but the intent is recorded); with
+`replicaCount > 1` it becomes `minAvailable: 1`, so a node drain during an upgrade
+cannot take the last healthy replica.
+
+**Autoscaling** - `autoscaling.enabled=true` renders an `autoscaling/v2` HPA
+(CPU target, 2-5 replicas) and the Deployment stops declaring a fixed
+`replicaCount`, so the two never fight. Off by default because the lab runs one
+replica; EKS ships metrics-server.
+
+**Restorable backups** - `backup.enabled=true` adds a CronJob per database that
+does more than a dump:
+
+```text
+pg_dump | gzip -9  ->  gunzip -t  ->  createdb scratch  ->  restore  ->  SELECT count(*)
+                                                |
+                                     scratch database dropped (trap)
+```
+
+A backup that cannot be restored fails the job at 02:00, not during an incident.
+Set `backup.s3.bucket` to copy each archive off-cluster (the pod then needs S3
+permissions, e.g. IRSA). Inspect what would run with `make backup-plan`, and
+restore by hand with `docs/runbooks/postgres-backup-restore.md`.
+
+**Manifest validation** - `make validate-manifests` renders every chart profile
+plus the standalone manifests and checks them against the Kubernetes JSON schemas
+with kubeconform. CI runs it, so a field Helm happily renders but the API server
+would reject fails the build instead of the rollout.
+
+**Supply chain** - `.github/workflows/security.yml` (weekly and on demand, not per
+pull request) builds the four images, scans them with a pinned Trivy, emits
+CycloneDX SBOMs and fails on CRITICAL findings that have a fix. `renovate.json`
+keeps dependency PRs small and pins GitHub Actions to digests; `.github/CODEOWNERS`
+marks the paths that need a reviewer who knows the system.
+
+**Load test** - `perf/checkout-load.js` (k6) turns the SLOs into measured numbers:
+p95 < 1.5 s, < 0.5% failed requests, >= 95% of checkouts confirmed. It polls the
+async saga rather than counting 202s, and cleans up the orders and stock it used.
+`make perf` runs it against a deployment; `.github/workflows/load.yml` runs it
+nightly or on demand (not per PR, where runner CPU would make it flaky).
+
 ## Local identity provider (Keycloak)
 
 `make auth` starts Keycloak on <http://localhost:8090> with the `bookstore` realm

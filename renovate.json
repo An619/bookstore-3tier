@@ -1,0 +1,44 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":dependencyDashboard", ":semanticCommits"],
+  "timezone": "Asia/Kolkata",
+  "schedule": ["before 6am on monday"],
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 3,
+  "packageRules": [
+    {
+      "description": "Container base images need a human to read the changelog and re-run the security scan",
+      "matchManagers": ["dockerfile"],
+      "labels": ["dependencies", "base-image"]
+    },
+    {
+      "description": "Helm, kubectl and Terraform providers are pinned for reproducibility",
+      "matchManagers": ["helm-values", "terraform"],
+      "groupName": "cluster tooling",
+      "automerge": false
+    },
+    {
+      "description": "Java and Maven dependencies: one PR per module set",
+      "matchDatasources": ["maven"],
+      "groupName": "maven dependencies"
+    },
+    {
+      "description": "npm: keep the frontend on patch updates only until reviewed",
+      "matchDatasources": ["npm"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Pin GitHub Actions to a digest so a tag cannot be moved under us",
+      "matchManagers": ["github-actions"],
+      "pinDigests": true
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "labels": ["security"],
+    "enabled": true
+  },
+  "kubernetes": {
+    "fileMatch": ["deploy/.+\\.ya?ml$", "helm/.+/templates/.+\\.ya?ml$"]
+  }
+}

@@ -37,6 +37,9 @@ creates the `bookstore-pipeline` job. Then run `make ci-run` to execute it.
 | `make lab` | Bring the application up (or update it after code changes) |
 | `make lab-light` | Same, with small requests/storage for a 2 CPU / 4 GB machine |
 | `make lab-verify` | Prove the deployment: pods, migrations, checkout saga, pod-kill recovery |
+| `make validate-manifests` | Check every rendered chart against the Kubernetes schemas |
+| `make backup-plan` | Show the opt-in backup CronJob (dump + restore verification) |
+| `make perf` | Run the k6 load test against a running stack |
 | `make lab-status` / `make lab-logs` | Inspect the cluster / follow logs |
 | `make lab-down` | Delete the lab cluster and its data |
 | `make lab-argocd` | Deploy through Argo CD instead of Helm (`kubectl` required) |

@@ -96,6 +96,31 @@ render orders-alerts-on helm/orders-service 'CheckoutOutboxBacklog' '' \
 render orders-alerts-off helm/orders-service '' 'CheckoutOutboxBacklog' \
   --set database.createSecret=true --set database.password=lab-only
 
+# Availability: the PDB must always render, and scale with replicaCount.
+for chart in catalog-service orders-service inventory-service; do
+  render "$chart-pdb" "helm/$chart" 'kind: PodDisruptionBudget' 'minAvailable: 1' \
+    --set database.createSecret=true --set database.password=lab-only
+  render "$chart-pdb-ha" "helm/$chart" 'minAvailable: 1' '' \
+    --set database.createSecret=true --set database.password=lab-only --set replicaCount=3
+  # Autoscaling replaces the fixed replica count instead of fighting with it.
+  render "$chart-hpa" "helm/$chart" 'kind: HorizontalPodAutoscaler' '' \
+    --set database.createSecret=true --set database.password=lab-only \
+    --set autoscaling.enabled=true --set autoscaling.maxReplicas=6
+  render "$chart-backup" "helm/$chart" 'kind: CronJob' '' \
+    --set database.createSecret=true --set database.password=lab-only \
+    --set backup.enabled=true
+  # With no database in the cluster there is nothing to dump.
+  render "$chart-backup-external" "helm/$chart" '' 'kind: CronJob' \
+    --set database.deploy=false --set database.host=db.example.com \
+    --set database.existingSecret=db-secret --set backup.enabled=true
+done
+render orders-backup-s3 helm/orders-service 'amazon/aws-cli' '' \
+  --set database.createSecret=true --set database.password=lab-only \
+  --set backup.enabled=true --set backup.s3.bucket=example-backups
+render frontend-pdb helm/frontend 'kind: PodDisruptionBudget' ''
+render frontend-hpa helm/frontend 'kind: HorizontalPodAutoscaler' '' \
+  --set autoscaling.enabled=true
+
 lint helm/frontend
 render frontend-default helm/frontend 'kind: Service' ''
 render frontend-nodeport helm/frontend 'nodePort: 30080' '' \

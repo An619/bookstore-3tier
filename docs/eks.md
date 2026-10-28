@@ -74,6 +74,25 @@ Service is created (AWS load balancer provisioning).
 commit's images and keeps existing database Secrets (it never regenerates
 passwords, which would break a running database).
 
+## Availability and backups
+
+The charts already render a PodDisruptionBudget, so node drains during upgrades
+cannot take the last healthy replica. Two opt-in switches matter on a real
+cluster:
+
+```sh
+# Two replicas + autoscaling (needs metrics-server, which EKS provides).
+helm upgrade orders-service helm/orders-service --reuse-values \
+  --set replicaCount=2 --set autoscaling.enabled=true --set autoscaling.maxReplicas=6
+
+# Restorable nightly backups, copied off-cluster (needs S3 permissions, e.g. IRSA).
+helm upgrade catalog-service helm/catalog-service --reuse-values \
+  --set backup.enabled=true --set backup.s3.bucket=my-backups
+```
+
+`make backup-plan` prints the regime (schedule, destination, restore check) before
+you enable it. EKS does not create the bucket or the IAM role for the uploader.
+
 ## Storage: no EBS required
 
 This path does **not** use EBS. EKS has no built-in volume provisioner, so

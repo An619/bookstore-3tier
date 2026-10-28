@@ -63,3 +63,26 @@ security:
     enabled: false
     issuerUri: ""
     jwkSetUri: ""
+
+# Availability: a node drain must never take the last healthy replica with it.
+podDisruptionBudget:
+  enabled: true
+  # Empty = minAvailable 1 when replicaCount > 1, otherwise maxUnavailable 1.
+  minAvailable: ""
+autoscaling:
+  # Off by default (the lab runs one replica); enable where metrics-server runs.
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+backup:
+  # Opt-in CronJob: pg_dump, gzip, then a restore into a scratch database.
+  # Needs database.deploy=true. Set backup.s3.bucket to copy archives off-cluster
+  # (the pod then needs S3 permissions, e.g. via IRSA).
+  enabled: false
+  schedule: "0 2 * * *"
+  sizeLimit: 1Gi
+  s3:
+    bucket: ""
+    prefix: bookstore/inventory
+    image: amazon/aws-cli:2.17.0

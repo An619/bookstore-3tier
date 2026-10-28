@@ -1,0 +1,25 @@
+# Review ownership. Replace @An619 with the team or user that owns each area.
+# GitHub only applies CODEOWNERS when "Require review from Code Owners" is on.
+
+# Everything by default.
+*                                   @An619
+
+# Service code: the team that runs it in production.
+/services/                          @An619
+/services/orders-service/           @An619
+/services/inventory-service/        @An619
+
+# Delivery, cluster and cloud configuration: changing these can take the site down.
+/helm/                              @An619
+/deploy/                            @An619
+/terraform/                         @An619
+/scripts/                           @An619
+/Jenkinsfile                        @An619
+
+# Contracts are shared: a change breaks another service's build.
+/contracts/                         @An619
+
+# Security-relevant configuration needs an explicit reviewer.
+/.github/workflows/                 @An619
+/deploy/local/auth/                 @An619
+/.github/CODEOWNERS                 @An619

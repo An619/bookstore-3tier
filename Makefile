@@ -6,7 +6,7 @@ CI_LAB := sh deploy/local/ci/lab.sh
 
 .DEFAULT_GOAL := help
 
-.PHONY: help migrate-legacy auth auth-token auth-cluster auth-cluster-token auth-cluster-stop auth-cluster-secure lab lab-light lab-verify lab-ci lab-ci-run lab-url lab-status lab-logs lab-down eks-plan eks-apply eks-images eks-deploy eks-verify eks-release eks-status eks-uninstall eks-destroy ci-status ci-run ci-down ci-reset test verify frontend preflight
+.PHONY: help migrate-legacy auth auth-token auth-cluster auth-cluster-token auth-cluster-stop auth-cluster-secure validate-manifests perf backup-plan lab lab-light lab-verify lab-ci lab-ci-run lab-url lab-status lab-logs lab-down eks-plan eks-apply eks-images eks-deploy eks-verify eks-release eks-status eks-uninstall eks-destroy ci-status ci-run ci-down ci-reset test verify frontend preflight
 
 migrate-legacy: ## Copy legacy books into the catalog DB (dry run first: DRY=1)
 	@if [ "$(DRY)" = "1" ]; then \
@@ -109,6 +109,22 @@ eks-destroy: ## Destroy the EKS cluster and all data (asks for confirmation)
 
 preflight: ## Check which local tools are installed
 	sh scripts/preflight.sh
+
+validate-manifests: ## Validate rendered charts and manifests with kubeconform
+	sh scripts/validate-manifests.sh
+
+perf: ## Run the k6 load test against a running deployment (needs k6 or Docker)
+	@if command -v k6 >/dev/null 2>&1; then \
+		k6 run perf/checkout-load.js; \
+	else \
+		docker run --rm --network host -v "$$PWD/perf:/scripts" \
+			-e BASE_URL=$${BASE_URL:-http://localhost:8080} \
+			-e VUS=$${VUS:-25} -e DURATION=$${DURATION:-2m} \
+			grafana/k6:0.54.0 run /scripts/checkout-load.js; \
+	fi
+
+backup-plan: ## Show the backup CronJob each chart would render (BACKUP=name to filter)
+	sh scripts/backup-plan.sh $(if $(BACKUP),--chart $(BACKUP),)
 
 test: ## Run the Python validation tests
 	python3 -m unittest discover -s tests -v

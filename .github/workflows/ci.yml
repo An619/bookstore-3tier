@@ -113,6 +113,17 @@ jobs:
           helm template inventory-service ./helm/inventory-service --namespace bookstore > /tmp/inventory-rendered.yaml
           test -s /tmp/inventory-rendered.yaml
 
+      - name: Validate rendered manifests against the Kubernetes schemas
+        run: |
+          set -eu
+          version=v0.6.7
+          curl -sSfL -o /tmp/kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/${version}/kubeconform-linux-amd64.tar.gz"
+          tar -xzf /tmp/kubeconform.tar.gz -C /tmp kubeconform
+          sudo install -m 0755 /tmp/kubeconform /usr/local/bin/kubeconform
+          kubeconform -v
+          sh scripts/validate-manifests.sh
+
       - name: Validate lab chart options
         run: |
           set -eu

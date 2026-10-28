@@ -1,0 +1,23 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+# Voluntary disruptions (node drains, cluster upgrades) must not take every
+# replica down at once. With a single replica this only records intent.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: orders-service
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  {{- if .Values.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  {{- else if gt (int .Values.replicaCount) 1 }}
+  minAvailable: 1
+  {{- else }}
+  maxUnavailable: 1
+  {{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: orders-service
+      app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
