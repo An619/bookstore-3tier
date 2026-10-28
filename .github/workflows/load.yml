@@ -10,17 +10,14 @@ name: Load test
 # depends on the runner's CPU, so it would make ordinary PRs flaky.
 
 on:
-  # TEMPORARY: one small run on the pull request to prove the wiring.
-  pull_request:
-    branches: [main]
   workflow_dispatch:
     inputs:
       vus:
         description: 'Virtual users at peak'
-        default: '5'
+        default: '25'
       duration:
         description: 'Peak duration (e.g. 2m, 5m)'
-        default: '15s'
+        default: '2m'
       checkout-ratio:
         description: 'Share of iterations that check out'
         default: '0.15'
@@ -65,8 +62,8 @@ jobs:
           docker run --rm --network host \
             -v "$PWD/perf:/scripts" -v "$PWD/perf-results:/results" \
             -e BASE_URL=http://localhost:8080 \
-            -e VUS='${{ inputs.vus || '5' }}' \
-            -e DURATION='${{ inputs.duration || '15s' }}' \
+            -e VUS='${{ inputs.vus || '25' }}' \
+            -e DURATION='${{ inputs.duration || '2m' }}' \
             -e CHECKOUT_RATIO='${{ inputs['checkout-ratio'] || '0.15' }}' \
             "$K6_IMAGE" run --summary-export /results/summary.json /scripts/checkout-load.js
 
