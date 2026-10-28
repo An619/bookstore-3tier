@@ -221,6 +221,20 @@ class SecurityWorkflowTest(unittest.TestCase):
         self.assertIn('--format cyclonedx', self.workflow)
         self.assertIn('security-reports', self.workflow)
 
+    def test_exceptions_are_documented_and_expire(self):
+        ignores = [line.split() for line in read('.trivyignore').splitlines()
+                   if line.strip() and not line.strip().startswith('#')]
+        self.assertTrue(ignores, 'the exception file should be explicit, not empty by accident')
+        for entry in ignores:
+            self.assertEqual(2, len(entry), f'{entry} needs an expiry date')
+            self.assertRegex(entry[0], r'^CVE-\d{4}-\d+$')
+            self.assertRegex(entry[1], r'^exp:\d{4}-\d{2}-\d{2}$',
+                             'an exception without an expiry rots silently')
+        text = read('.trivyignore')
+        self.assertIn('owner:', text)
+        self.assertIn('CVE-2026-47884', text)
+        self.assertIn('--ignorefile', read('.github/workflows/security.yml'))
+
     def test_the_severity_gate_is_selectable(self):
         self.assertIn("inputs['fail-on']", self.workflow)
         self.assertIn('CRITICAL', self.workflow)
