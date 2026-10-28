@@ -83,7 +83,7 @@ jobs:
               "bookstore/$image:scan" || {
                 echo "::error::$image has $FAIL_ON vulnerabilities that have a fix"
                 # Surface the actual packages/CVEs, limited so annotations stay readable.
-                grep -E "$FAIL_ON" "reports/$image.txt" | head -5 | while IFS= read -r line; do
+                grep -E "$FAIL_ON" "reports/$image.txt" | grep -v "Total:" | head -12 | while IFS= read -r line; do
                   echo "::error file=services/$image/Dockerfile::$image: $line"
                 done || true
                 status=1
