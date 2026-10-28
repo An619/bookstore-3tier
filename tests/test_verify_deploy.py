@@ -7,6 +7,7 @@ sandbox has no cluster.
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -178,8 +179,15 @@ class VerifyDeployTest(unittest.TestCase):
         self.assertIn('unknown option', result.stderr)
 
     def test_requires_kubectl(self):
-        result = subprocess.run(['sh', str(ROOT / 'scripts/verify-deploy.sh'), '--skip-smoke'],
-                                cwd=ROOT, env=dict(os.environ, PATH='/usr/bin:/bin'),
+        # Every self-hosted and GitHub image ships kubectl in a different place, so
+        # hide it by handing the script a PATH with only what it needs to start.
+        only = self.root / 'only'
+        only.mkdir(exist_ok=True)
+        dirname = shutil.which('dirname')
+        self.assertIsNotNone(dirname)
+        (only / 'dirname').symlink_to(dirname)
+        result = subprocess.run(['/bin/sh', str(ROOT / 'scripts/verify-deploy.sh'), '--skip-smoke'],
+                                cwd=ROOT, env=dict(os.environ, PATH=str(only)),
                                 capture_output=True, text=True)
         self.assertNotEqual(0, result.returncode)
         self.assertIn('kubectl is required', result.stderr)
