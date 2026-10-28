@@ -1,0 +1,68 @@
+{
+  "realm": "bookstore",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "accessTokenLifespan": 900,
+  "clientScopes": [
+    {
+      "name": "orders.read",
+      "description": "Read orders",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
+    },
+    {
+      "name": "orders.write",
+      "description": "Place checkouts and mutate orders",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
+    },
+    {
+      "name": "inventory.read",
+      "description": "Read stock",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
+    },
+    {
+      "name": "inventory.write",
+      "description": "Reserve and release stock",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "bookstore-web",
+      "name": "Bookstore browser demo",
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost:8080/*"],
+      "webOrigins": ["+"],
+      "defaultClientScopes": ["orders.read", "orders.write", "inventory.read", "inventory.write", "profile"]
+    },
+    {
+      "clientId": "orders-service",
+      "name": "Orders service (service account)",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "defaultClientScopes": ["inventory.read", "inventory.write", "orders.read", "orders.write"]
+    }
+  ],
+  "users": [
+    {
+      "username": "demo",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "demo@example.com",
+      "firstName": "Demo",
+      "lastName": "Customer",
+      "credentials": [{ "type": "password", "value": "demo-password", "temporary": false }]
+    }
+  ]
+}

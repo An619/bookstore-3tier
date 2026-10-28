@@ -4,6 +4,7 @@ metadata:
   name: {{ .Release.Name }}
   labels:
     app.kubernetes.io/name: catalog-service
+    app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
   type: {{ .Values.service.type }}
   selector:

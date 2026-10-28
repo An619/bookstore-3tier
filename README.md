@@ -1,6 +1,28 @@
-# Bookstore 3-Tier DevOps Platform
+# Bookstore Microservices DevOps Platform
 
-A hands-on DevOps portfolio lab around a three-tier application. The repository is designed to be practiced in Killercoda first and then moved to a local Kubernetes cluster or AWS EKS.
+A hands-on DevOps portfolio lab with independent Catalog, Orders and Inventory microservices. The repository is designed to be practiced in Killercoda first and then moved to a local Kubernetes cluster or AWS EKS.
+
+## Microservices quick start
+
+```sh
+make lab        # kind cluster + images + deploy + smoke test -> http://localhost:8080
+make lab-ci     # add Jenkins and SonarQube, fully configured
+```
+
+Only Docker, `git`, `python3` and `curl` are required: `kind` is downloaded
+(checksum-verified) and Helm runs from a pinned container image.
+
+- Browser VM practice: [docs/killercoda.md](docs/killercoda.md) (`make lab-light`)
+- AWS: [docs/eks.md](docs/eks.md) (`make eks-plan`, `eks-apply`, `eks-images`,
+  `eks-deploy`, `eks-uninstall`, `eks-destroy`); costs are listed in
+  [docs/aws-costs.md](docs/aws-costs.md)
+
+See [docs/QUICKSTART.md](docs/QUICKSTART.md) for the short version and
+[Microservices build and delivery](docs/microservices-delivery.md) for the
+current Maven → Jenkins → SonarQube → Docker → Argo CD → Kubernetes workflow.
+The default Compose stack no longer needs the legacy Node API; enable it explicitly
+with `--profile legacy` when needed. Use `helm/frontend` plus the three service
+charts for a microservices-only cluster; `helm/bookstore` is the legacy chart.
 
 ## Application architecture
 
@@ -8,7 +30,8 @@ A hands-on DevOps portfolio lab around a three-tier application. The repository 
 - **Catalog domain:** Java 21 + Spring Boot Catalog Service with its own PostgreSQL database.
 - **Orders domain:** Java 21 + Spring Boot Orders Service with its own PostgreSQL database and order API.
 - **Inventory domain:** Java 21 + Spring Boot Inventory Service with its own PostgreSQL database, stock query, reserve and release endpoints.
-- **Legacy routes:** Node.js + Express API remains for business capabilities not yet migrated.
+- **Checkout:** the orders service owns `POST /api/checkout`. It writes the order, the idempotency record and an outbox event in one transaction, answers **202**, and a background worker reserves stock through `Idempotency-Key`-guarded inventory calls. `Idempotency-Key` (8-48 chars) makes retries and lost responses safe, and a reconciler settles unresolved attempts from the inventory ledger without an operator. See [asynchronous checkout](docs/microservices-delivery.md#asynchronous-checkout-transactional-outbox).
+- **Legacy API:** Node.js + Express is retained under the optional `legacy` Compose profile, on direct port 5000 only.
 - **Data tier:** PostgreSQL.
 - **Local runtime:** Docker Compose with health-gated dependencies and a persistent development database volume.
 
@@ -18,6 +41,11 @@ A hands-on DevOps portfolio lab around a three-tier application. The repository 
 - Jenkins declarative pipeline: Node and Maven validation, image build, Compose smoke test, Helm checks, optional SonarQube and Trivy stages, optional commit-tagged Docker Hub/ECR publishing for all application images.
 - Docker: multi-stage frontend build, non-root backend, unprivileged Nginx frontend, health checks and a private database network.
 - Kubernetes packaging: Helm charts for the legacy stack and the Catalog, Orders and Inventory services, each with a separate database workload, probes and resource/security settings.
+- Contract tests: `contracts/inventory-api.json` is verified by both the inventory provider and the orders consumer client, so a breaking rename fails both builds.
+- Checkout saga with an opt-in payment step: price read server-side from the catalog, a `PaymentGateway` SPI (no card data here), and a durable `RELEASE_STOCK` compensation when payment is declined.
+- Optional JWT authorization (`security.jwt.enabled`) with per-endpoint scopes, OTLP tracing with 0% sampling by default, checkout metrics and opt-in Prometheus alerts.
+- Availability and supply-chain guard rails: PodDisruptionBudgets on every workload, opt-in autoscaling, a backup CronJob that verifies restores, kubeconform manifest validation, scheduled Trivy scans with CycloneDX SBOMs, a k6 load test that measures the SLOs, Renovate and CODEOWNERS.
+- Versioned Flyway migrations per service (Hibernate only validates), an optional local Keycloak realm for testing JWT authorization (`make auth`), a Grafana dashboard plus SLO recording rules, a legacy data migration script, managed-PostgreSQL settings (TLS + pool) and a service-discovery/configuration reference.
 - GitOps starter: Argo CD Application configured for manual sync until environment values are reviewed.
 - Infrastructure as code starter: Terraform VPC, EKS managed node group and immutable ECR repositories.
 - Operations: security baseline, Kubernetes troubleshooting, deployment rollback and PostgreSQL backup/restore runbooks.
@@ -61,9 +89,6 @@ From the repository root:
 ```bash
 docker compose up --build -d
 docker compose ps
-curl -fsS http://localhost:5000/api/health
-curl -fsS http://localhost:5000/api/ready
-curl -fsS http://localhost:5000/api/books
 curl -fsS http://localhost:8080/api/catalog/books
 curl -fsS http://localhost:8081/actuator/health/readiness
 curl -fsS http://localhost:8081/api/catalog/books
@@ -98,7 +123,7 @@ The Compose database password and Helm default password are for disposable local
 
 ## Recommended learning path
 
-1. Run the app locally and understand each tier and health/readiness check.
+1. Run the app locally (or on Killercoda with `make lab-light`) and understand each tier and health/readiness check.
 2. Review GitHub Actions and fix any failed CI stages.
 3. Configure Jenkins Multibranch Pipeline and optional SonarQube/Trivy integrations.
 4. Validate the Java Catalog Service with Maven and SonarQube, then build/push immutable images to a registry.
@@ -106,7 +131,7 @@ The Compose database password and Helm default password are for disposable local
 6. Configure environment-specific values and manually sync Argo CD.
 7. Add monitoring, test alert delivery and practice rollback/restore.
 8. Review Terraform, set a supported EKS version and trusted API endpoint CIDR, then plan AWS infrastructure.
-9. Deploy to EKS, validate the workload and destroy lab resources when finished.
+9. Deploy to EKS with `make eks-apply && make eks-images && make eks-deploy`, validate the workload, then `make eks-destroy` to stop billing.
 
 ## Engineering principles
 

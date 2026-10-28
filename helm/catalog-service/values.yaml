@@ -7,6 +7,10 @@ service:
   type: ClusterIP
   port: 8081
 database:
+  # LAB ONLY: set createSecret=true to let this chart create the credential
+  # Secret. Shared clusters should use an externally managed Secret instead.
+  createSecret: false
+  password: ""
   deploy: true
   host: catalog-service-postgres
   port: 5432
@@ -14,7 +18,20 @@ database:
   username: cataloguser
   existingSecret: catalog-db-secret
   storage: 5Gi
+  persistence:
+    # false = emptyDir: no StorageClass/CSI driver needed, data lost on restart.
+    enabled: true
+    # Empty = cluster default StorageClass. Set an EFS/local-path class if you
+    # do not want EBS volumes.
+    storageClassName: ""
   image: postgres:16-alpine
+  # Managed PostgreSQL: set TLS (e.g. "require") and pool limits. The charts
+  # still create no database pods when deploy=false; point host at RDS/Aurora/
+  # Cloud SQL and reference an externally managed Secret.
+  sslmode: ""
+  hikari:
+    maximumPoolSize: 10
+    connectionTimeoutMs: 30000
 resources:
   requests:
     cpu: 100m
@@ -23,6 +40,8 @@ resources:
     cpu: 500m
     memory: 512Mi
 podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
   runAsNonRoot: true
   runAsUser: 10001
   runAsGroup: 10001
@@ -32,3 +51,44 @@ containerSecurityContext:
   capabilities:
     drop:
       - ALL
+
+imagePullSecrets: []
+networkPolicy:
+  enabled: false
+  # Optional: namespace allowed to scrape /actuator/prometheus (e.g. monitoring).
+  metricsNamespace: ""
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  # Must match your Prometheus resource's serviceMonitorSelector labels.
+  labels:
+    release: kube-prometheus-stack
+observability:
+  tracing:
+    # OTLP/HTTP endpoint, e.g. http://otel-collector.monitoring:4318/v1/traces.
+    # Empty = tracing stays local (sampling 0), nothing is exported.
+    endpoint: ""
+    samplingProbability: 0.0
+
+# Availability: a node drain must never take the last healthy replica with it.
+podDisruptionBudget:
+  enabled: true
+  # Empty = minAvailable 1 when replicaCount > 1, otherwise maxUnavailable 1.
+  minAvailable: ""
+autoscaling:
+  # Off by default (the lab runs one replica); enable where metrics-server runs.
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+backup:
+  # Opt-in CronJob: pg_dump, gzip, then a restore into a scratch database.
+  # Needs database.deploy=true. Set backup.s3.bucket to copy archives off-cluster
+  # (the pod then needs S3 permissions, e.g. via IRSA).
+  enabled: false
+  schedule: "0 2 * * *"
+  sizeLimit: 1Gi
+  s3:
+    bucket: ""
+    prefix: bookstore/catalog
+    image: amazon/aws-cli:2.17.0

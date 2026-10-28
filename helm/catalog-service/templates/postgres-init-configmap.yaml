@@ -1,3 +1,4 @@
+{{- if .Values.database.deploy }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -20,3 +21,4 @@ data:
     INSERT INTO catalog_books (title, author, category, price)
     SELECT 'Mastering Jenkins', 'Alex Smith', 'CI/CD', 699.00
     WHERE NOT EXISTS (SELECT 1 FROM catalog_books WHERE title = 'Mastering Jenkins');
+{{- end }}

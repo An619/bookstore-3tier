@@ -1,5 +1,6 @@
 services:
   database:
+    profiles: [legacy]
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: bookstore
@@ -17,6 +18,8 @@ services:
     restart: unless-stopped
 
   catalog-database:
+    # The schema is created by the catalog service's Flyway migrations, so the
+    # containers start empty on purpose: this path is exercised by CI.
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: catalogdb
@@ -24,7 +27,6 @@ services:
       POSTGRES_PASSWORD: ${CATALOG_DB_PASSWORD:-local-catalog-only-change-me}
     volumes:
       - catalog_data:/var/lib/postgresql/data
-      - ./database/catalog-init.sql:/docker-entrypoint-initdb.d/01-catalog-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U cataloguser -d catalogdb"]
       interval: 5s
@@ -34,6 +36,7 @@ services:
     restart: unless-stopped
 
   backend:
+    profiles: [legacy]
     build: ./backend
     image: bookstore-backend:local
     environment:
@@ -66,7 +69,6 @@ services:
       POSTGRES_PASSWORD: ${ORDERS_DB_PASSWORD:-local-orders-change-me}
     volumes:
       - orders_data:/var/lib/postgresql/data
-      - ./database/orders-service-init.sql:/docker-entrypoint-initdb.d/01-orders-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U serviceuser -d ordersdb"]
       interval: 5s
@@ -83,7 +85,6 @@ services:
       POSTGRES_PASSWORD: ${INVENTORY_DB_PASSWORD:-local-inventory-change-me}
     volumes:
       - inventory_data:/var/lib/postgresql/data
-      - ./database/inventory-service-init.sql:/docker-entrypoint-initdb.d/01-inventory-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U serviceuser -d inventorydb"]
       interval: 5s
@@ -93,15 +94,24 @@ services:
     restart: unless-stopped
 
   orders-service:
-    build: ./services/orders-service
+    build:
+      context: .
+      dockerfile: services/orders-service/Dockerfile
     image: bookstore-orders-service:local
     environment:
       SERVER_PORT: "8082"
+      INVENTORY_SERVICE_URL: http://inventory-service:8083
+      # Used only when PAYMENTS_ENABLED=true, to price the order server-side.
+      CATALOG_SERVICE_URL: http://catalog-service:8081
       SPRING_DATASOURCE_URL: jdbc:postgresql://orders-database:5432/ordersdb
       SPRING_DATASOURCE_USERNAME: serviceuser
       SPRING_DATASOURCE_PASSWORD: ${ORDERS_DB_PASSWORD:-local-orders-change-me}
+      # JWT enforcement is off for the lab; `make auth` + these two variables turn
+      # it on. See docs/microservices-delivery.md (Local identity provider).
+      SECURITY_JWT_ENABLED: ${SECURITY_JWT_ENABLED:-false}
+      SECURITY_JWT_JWK_SET_URI: ${SECURITY_JWT_JWK_SET_URI:-http://keycloak:8090/realms/bookstore/protocol/openid-connect/certs}
     ports:
-      - "8082:8082"
+      - "${ORDERS_PORT:-8082}:8082"
     depends_on:
       orders-database:
         condition: service_healthy
@@ -115,7 +125,9 @@ services:
     restart: unless-stopped
 
   inventory-service:
-    build: ./services/inventory-service
+    build:
+      context: .
+      dockerfile: services/inventory-service/Dockerfile
     image: bookstore-inventory-service:local
     environment:
       SERVER_PORT: "8083"
@@ -123,7 +135,7 @@ services:
       SPRING_DATASOURCE_USERNAME: serviceuser
       SPRING_DATASOURCE_PASSWORD: ${INVENTORY_DB_PASSWORD:-local-inventory-change-me}
     ports:
-      - "8083:8083"
+      - "${INVENTORY_PORT:-8083}:8083"
     depends_on:
       inventory-database:
         condition: service_healthy
@@ -137,7 +149,9 @@ services:
     restart: unless-stopped
 
   catalog-service:
-    build: ./services/catalog-service
+    build:
+      context: .
+      dockerfile: services/catalog-service/Dockerfile
     image: bookstore-catalog-service:local
     environment:
       SERVER_PORT: "8081"
@@ -145,7 +159,7 @@ services:
       SPRING_DATASOURCE_USERNAME: cataloguser
       SPRING_DATASOURCE_PASSWORD: ${CATALOG_DB_PASSWORD:-local-catalog-only-change-me}
     ports:
-      - "8081:8081"
+      - "${CATALOG_PORT:-8081}:8081"
     depends_on:
       catalog-database:
         condition: service_healthy
@@ -158,11 +172,27 @@ services:
     networks: [bookstore-net]
     restart: unless-stopped
 
+  # Optional local identity provider for testing JWT authorization.
+  # `docker compose --profile auth up -d` (or `make auth`).
+  keycloak:
+    profiles: [auth]
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm", "--http-port=8090", "--hostname-strict=false"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-local-keycloak-admin}
+    volumes:
+      - ./deploy/local/auth/bookstore-realm.json:/opt/keycloak/data/import/bookstore-realm.json:ro
+    ports:
+      - "8090:8090"
+    networks: [bookstore-net]
+    restart: unless-stopped
+
   frontend:
     build: ./frontend
     image: bookstore-frontend:local
     ports:
-      - "8080:8080"
+      - "${FRONTEND_PORT:-8080}:8080"
     depends_on:
       catalog-service:
         condition: service_healthy

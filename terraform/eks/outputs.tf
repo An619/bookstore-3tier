@@ -42,3 +42,18 @@ output "configure_kubectl_command" {
   description = "Command to configure kubectl for this cluster."
   value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks.cluster_name}"
 }
+
+output "ebs_csi_role_arn" {
+  description = "IAM role for the EBS CSI driver when enable_ebs_csi is true (null otherwise)."
+  value       = one(aws_iam_role.ebs_csi[*].arn)
+}
+
+output "ecr_registry" {
+  description = "ECR registry host name used in image references."
+  value       = split("/", aws_ecr_repository.frontend.repository_url)[0]
+}
+
+output "ecr_repository_prefix" {
+  description = "Prefix for image names, e.g. bookstore-lab- (matches scripts/prepare-release.py --repository-prefix)."
+  value       = "${local.name}-"
+}

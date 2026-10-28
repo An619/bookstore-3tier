@@ -10,6 +10,15 @@ import jakarta.persistence.Column;
 @Entity
 @Table(name = "customer_orders")
 public class OrderRecord {
+    /** Stock reservation has not been confirmed by the inventory service yet. */
+    public static final String PENDING = "PENDING";
+    /** Inventory confirmed the reservation. */
+    public static final String CONFIRMED = "CONFIRMED";
+    /** Reservation was rejected; no stock is held. */
+    public static final String CANCELLED = "CANCELLED";
+    /** Created directly through the direct API without a stock reservation. */
+    public static final String CREATED = "CREATED";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -31,4 +40,5 @@ public class OrderRecord {
     public Long getBookId() { return bookId; }
     public Integer getQuantity() { return quantity; }
     public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
 }

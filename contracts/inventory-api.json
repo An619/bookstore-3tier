@@ -1,0 +1,83 @@
+{
+  "name": "inventory-api",
+  "version": 3,
+  "description": "Contract between orders-service (consumer) and inventory-service (provider). Both services copy this file into their test classpath and verify it, so a breaking change on either side fails that service's build.",
+  "basePath": "/api/inventory",
+  "itemFields": {
+    "bookId": "number",
+    "availableQuantity": "number"
+  },
+  "endpoints": [
+    {
+      "method": "GET",
+      "path": "/api/inventory",
+      "responses": {
+        "200": {
+          "array": true
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/inventory/{bookId}",
+      "responses": {
+        "200": {
+          "array": false
+        },
+        "404": {}
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/inventory/{bookId}/reserve",
+      "query": {
+        "quantity": "int"
+      },
+      "requestHeaders": {
+        "Idempotency-Key": "optional, 8-64 chars, replays the previous result"
+      },
+      "responses": {
+        "200": {
+          "array": false
+        },
+        "400": {},
+        "404": {},
+        "409": {}
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/inventory/{bookId}/release",
+      "query": {
+        "quantity": "int"
+      },
+      "requestHeaders": {
+        "Idempotency-Key": "optional, 8-64 chars, replays the previous result"
+      },
+      "responses": {
+        "200": {
+          "array": false
+        },
+        "400": {},
+        "404": {}
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/inventory/operations/{idempotencyKey}",
+      "description": "Read-only lookup of a recorded operation. The orders reconciler uses it to decide whether a reservation landed when the reply was lost.",
+      "responses": {
+        "200": {
+          "array": false
+        },
+        "404": {}
+      }
+    }
+  ],
+  "operationFields": {
+    "operation": "string",
+    "bookId": "number",
+    "quantity": "number",
+    "resultingQuantity": "number"
+  }
+}

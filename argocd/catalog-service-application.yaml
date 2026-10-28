@@ -10,6 +10,7 @@ spec:
     targetRevision: main
     path: helm/catalog-service
     helm:
+      releaseName: catalog-service
       valueFiles:
         - values.yaml
   destination:

@@ -5,10 +5,111 @@ image:
   pullPolicy: IfNotPresent
 service:
   port: 8082
+inventory:
+  url: http://inventory-service:8083
+catalog:
+  url: http://catalog-service:8081
+# Payment authorization step. Disabled by default: enabling it needs a PSP
+# adapter registered as a PaymentGateway bean in this service.
+payments:
+  enabled: false
+  currency: INR
+# Asynchronous checkout. The worker drains the outbox; the reconciler settles
+# attempts it could not confirm using the inventory ledger.
+checkout:
+  worker:
+    enabled: true
+    delayMs: 2000
+    maxAttempts: 5
+  reconciler:
+    enabled: true
+    delayMs: 5000
+    maxCycles: 3
 database:
+  # false = use an external PostgreSQL; the chart then renders no database pods.
+  deploy: true
+  # LAB ONLY: set createSecret=true to let this chart create the credential
+  # Secret. Shared clusters should use an externally managed Secret instead.
+  createSecret: false
+  password: ""
   host: orders-service-postgres
   name: ordersdb
   username: serviceuser
   secretName: orders-db-secret
   storage: 5Gi
+  persistence:
+    # false = emptyDir: no StorageClass/CSI driver needed, data lost on restart.
+    enabled: true
+    # Empty = cluster default StorageClass. Set an EFS/local-path class if you
+    # do not want EBS volumes.
+    storageClassName: ""
   image: postgres:16-alpine
+  # Managed PostgreSQL: set TLS (e.g. "require") and pool limits. The charts
+  # still create no database pods when deploy=false; point host at RDS/Aurora/
+  # Cloud SQL and reference an externally managed Secret.
+  sslmode: ""
+  hikari:
+    maximumPoolSize: 10
+    connectionTimeoutMs: 30000
+
+imagePullSecrets: []
+networkPolicy:
+  enabled: false
+  # Optional: namespace allowed to scrape /actuator/prometheus (e.g. monitoring).
+  metricsNamespace: ""
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  # Must match your Prometheus resource's serviceMonitorSelector labels.
+  labels:
+    release: kube-prometheus-stack
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+observability:
+  tracing:
+    # OTLP/HTTP endpoint, e.g. http://otel-collector.monitoring:4318/v1/traces.
+    # Empty = tracing stays local (sampling 0), nothing is exported.
+    endpoint: ""
+    samplingProbability: 0.0
+alerts:
+  # Opt-in PrometheusRule for the checkout pipeline. Requires the Prometheus
+  # Operator CRDs in the cluster.
+  enabled: false
+  # Must match your Prometheus resource's ruleSelector labels.
+  labels:
+    release: kube-prometheus-stack
+
+security:
+  jwt:
+    # true = require a bearer token. Set issuerUri (OIDC discovery) or jwkSetUri.
+    enabled: false
+    issuerUri: ""
+    jwkSetUri: ""
+
+# Availability: a node drain must never take the last healthy replica with it.
+podDisruptionBudget:
+  enabled: true
+  # Empty = minAvailable 1 when replicaCount > 1, otherwise maxUnavailable 1.
+  minAvailable: ""
+autoscaling:
+  # Off by default (the lab runs one replica); enable where metrics-server runs.
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+backup:
+  # Opt-in CronJob: pg_dump, gzip, then a restore into a scratch database.
+  # Needs database.deploy=true. Set backup.s3.bucket to copy archives off-cluster
+  # (the pod then needs S3 permissions, e.g. via IRSA).
+  enabled: false
+  schedule: "0 2 * * *"
+  sizeLimit: 1Gi
+  s3:
+    bucket: ""
+    prefix: bookstore/orders
+    image: amazon/aws-cli:2.17.0

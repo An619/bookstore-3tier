@@ -1,0 +1,20 @@
+# Alternative to the legacy bookstore-application.yaml; do not install both frontends.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bookstore-frontend
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/An619/bookstore-3tier.git
+    targetRevision: main
+    path: helm/frontend
+    helm:
+      releaseName: bookstore-frontend
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bookstore
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true

@@ -1,11 +1,16 @@
 # Microservices migration status
 
+> For the current microservices-only stack and release workflow, see
+> [Microservices build and delivery](microservices-delivery.md). Legacy instructions
+> below are retained for reference; the Node API now requires `--profile legacy`.
+
 The repository now has three separately deployable Java 21/Spring Boot services—Catalog, Orders and Inventory—each with its own PostgreSQL database. Nginx routes all three domain APIs while the legacy Node.js API remains temporarily for routes not yet migrated.
 
 ## Service APIs
 
 - Catalog: `GET /api/catalog/books`, `GET /api/catalog/books/{id}`
 - Orders: `GET /api/orders`, `GET /api/orders/{id}`, `POST /api/orders` with `customerName`, `bookId`, and `quantity`
+- Orders: `GET /api/orders`, `GET /api/orders/{id}`, `POST /api/orders`, `DELETE /api/orders/{id}`, `POST /api/checkout` (requires `Idempotency-Key`, routes through Nginx to the orders service)
 - Inventory: `GET /api/inventory`, `GET /api/inventory/{bookId}`, `POST /api/inventory/{bookId}/reserve?quantity=1`, `POST /api/inventory/{bookId}/release?quantity=1`
 
 The Orders service validates basic order input. Inventory rejects invalid quantities and insufficient stock. These are learning-grade APIs; order creation does not yet orchestrate an atomic stock reservation or payment.
@@ -92,4 +97,4 @@ Use a unique secret password in real environments. The in-chart PostgreSQL workl
 
 ## Remaining migration work
 
-This is a stronger staged microservices migration, but it is not production-complete. Catalog, Orders and Inventory are independently deployable and own separate databases. Order creation does not yet reserve stock transactionally; customer identity, payment/checkout, inter-service authentication, retries/idempotency, distributed tracing, contract testing and production database operations remain future work.
+This is a stronger staged microservices migration, but it is not production-complete. Catalog, Orders and Inventory are independently deployable and own separate databases. Checkout now runs in the orders service (`POST /api/checkout`): it records the order and an outbox event in one transaction, returns 202, and a worker reserves stock asynchronously with `Idempotency-Key`-guarded inventory calls; unresolved attempts are reconciled automatically from the inventory ledger. `contracts/inventory-api.json` is checked by both the provider and the consumer, so contract drift fails both builds - see `docs/microservices-delivery.md` for the flow and its limits. Customer identity, authentication/authorization, payment processing, distributed tracing, service discovery, versioned migrations and production database operations remain future work.

@@ -9,6 +9,10 @@ kubernetes_version = "REPLACE_WITH_SUPPORTED_EKS_VERSION"
 # Never use 0.0.0.0/0 for the public EKS API endpoint.
 cluster_endpoint_public_access_cidrs = ["REPLACE_WITH_YOUR_PUBLIC_IP/32"]
 
+# Storage: leave false to run without EBS. With false, prefer ephemeral database
+# storage (the default in scripts/eks.sh) or an external database/EFS class.
+enable_ebs_csi = false
+
 availability_zone_count = 2
 node_instance_types      = ["t3.medium"]
 node_desired_size        = 2

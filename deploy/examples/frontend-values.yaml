@@ -1,0 +1,13 @@
+# EXAMPLE ONLY: change DNS name, TLS secret and ingress class before using.
+ingress:
+  enabled: true
+  className: nginx
+  host: bookstore.example.com
+  tls:
+    - secretName: bookstore-tls
+      hosts: [bookstore.example.com]
+networkPolicy:
+  enabled: true
+# For private images, pre-create this Secret or use the namespace service account:
+# imagePullSecrets:
+#   - name: registry-pull

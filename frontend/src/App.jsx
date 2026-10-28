@@ -1,14 +1,55 @@
 import { useCallback, useEffect, useState } from 'react';
 import './App.css';
 
-async function requestJson(url, options) {
-  const response = await fetch(url, options);
+// When the deployment enables JWT authorization, the browser presents the
+// token an identity provider issued. Without one (local lab) this is empty and
+// the services allow anonymous requests.
+function authorizationHeader() {
+  const token = sessionStorage.getItem('bookstoreToken');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function requestJson(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: { ...authorizationHeader(), ...(options.headers ?? {}) },
+  });
   const body = await response.json().catch(() => null);
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('Sign-in required: this deployment needs a bearer token.');
+    }
+    if (response.status === 403) {
+      throw new Error('Your token does not have the scope this action needs.');
+    }
     throw new Error(body?.message || body?.error || `Request failed (${response.status})`);
   }
   return body;
 }
+
+const CHECKOUT_POLL_INTERVAL_MS = 1000;
+const CHECKOUT_POLL_ATTEMPTS = 20;
+
+function delay(ms) {
+  return new Promise((resolve) => { setTimeout(resolve, ms); });
+}
+
+// Checkout is asynchronous: the orders service accepts the request with 202 and
+// confirms it from its outbox. Poll the order until the worker settles it.
+async function awaitCheckoutResult(orderId) {
+  for (let attempt = 0; attempt < CHECKOUT_POLL_ATTEMPTS; attempt += 1) {
+    const order = await requestJson(`/api/orders/${orderId}`);
+    if (order.status !== 'PENDING') return order;
+    await delay(CHECKOUT_POLL_INTERVAL_MS);
+  }
+  return null;
+}
+
+const CHECKOUT_MESSAGES = {
+  CONFIRMED: (title) => `Demo order confirmed for “${title}”. Inventory was reserved by the orders service.`,
+  CANCELLED: () => 'Checkout was cancelled by the orders service — the stock could not be reserved. Refresh and try again.',
+  NEEDS_RECONCILIATION: () => 'Checkout needs manual reconciliation; the inventory reservation could not be confirmed.',
+};
 
 function App() {
   const [books, setBooks] = useState([]);
@@ -50,46 +91,44 @@ function App() {
     setBusyBookId(book.id);
     setNotice('');
     setError('');
-    let stockReserved = false;
     try {
       const stock = inventory.find((item) => item.bookId === book.id);
       if (!stock || stock.availableQuantity < 1) {
         throw new Error('This book is currently out of stock.');
       }
 
-      await requestJson(`/api/inventory/${book.id}/reserve?quantity=1`, { method: 'POST' });
-      stockReserved = true;
-      try {
-        await requestJson('/api/orders', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            customerName: 'Portfolio Demo Customer',
-            bookId: book.id,
-            quantity: 1,
-          }),
-        });
-      } catch (orderError) {
-        try {
-          await requestJson(`/api/inventory/${book.id}/release?quantity=1`, { method: 'POST' });
-          stockReserved = false;
-        } catch {
-          throw new Error(`${orderError.message} Inventory compensation also failed; check inventory before retrying.`);
+      // The orders service owns reservation and compensation. A fresh idempotency
+      // key per click makes an explicit retry safe without double-reserving.
+      // 202 means the order is queued; the worker confirms it asynchronously.
+      const accepted = await requestJson('/api/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': `demo-${crypto.randomUUID()}`,
+        },
+        body: JSON.stringify({
+          customerName: 'Portfolio Demo Customer',
+          bookId: book.id,
+          quantity: 1,
+        }),
+      });
+      const settled = await awaitCheckoutResult(accepted.id);
+      if (settled) {
+        const message = CHECKOUT_MESSAGES[settled.status];
+        if (message) {
+          if (settled.status === 'CONFIRMED') {
+            setNotice(message(book.title));
+          } else {
+            setError(message());
+          }
+        } else {
+          setNotice(`Order #${settled.id} finished with status ${settled.status}.`);
         }
-        throw orderError;
+      } else {
+        setNotice(`Order #${accepted.id} is queued; the orders service is still confirming it. Refresh in a moment.`);
       }
-      setNotice(`Demo order created for “${book.title}”. Inventory was reserved.`);
-      loadData().catch(() => setError('Order was created, but the page could not refresh. Reload to see the latest stock and orders.'));
+      loadData().catch(() => setError('Order was submitted, but the page could not refresh. Reload to see the latest stock and orders.'));
     } catch (err) {
-      if (stockReserved) {
-        try {
-          await requestJson(`/api/inventory/${book.id}/release?quantity=1`, { method: 'POST' });
-        } catch {
-          setError(`${err.message} Inventory compensation also failed; check inventory before retrying.`);
-          setBusyBookId(null);
-          return;
-        }
-      }
       setError(err.message);
     } finally {
       setBusyBookId(null);

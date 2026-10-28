@@ -47,38 +47,21 @@ pipeline {
                     sh 'node --version'
                     sh 'npm ci'
                     sh 'npm test'
+                    sh 'npm audit --audit-level=high'
                 }
             }
         }
 
-        stage('Maven catalog service validation') {
+        stage('Maven microservices verification') {
             steps {
-                dir('services/catalog-service') {
-                    sh 'java -version'
-                    sh '''
-                        for attempt in 1 2 3; do
-                          mvn -B -ntp verify && exit 0
-                          echo "Maven attempt $attempt failed; retrying"
-                          sleep $((attempt * 5))
-                        done
-                        exit 1
-                    '''
-                }
+                sh 'java -version'
+                sh 'mvn -B -ntp verify'
+                sh 'python3 -m unittest discover -s tests -v'
             }
-        }
-
-        stage('Orders microservice validation') {
-            steps {
-                dir('services/orders-service') {
-                    sh 'mvn -B -ntp verify'
-                }
-            }
-        }
-
-        stage('Inventory microservice validation') {
-            steps {
-                dir('services/inventory-service') {
-                    sh 'mvn -B -ntp verify'
+            post {
+                always {
+                    junit 'services/*/target/surefire-reports/*.xml'
+                    archiveArtifacts artifacts: 'services/*/target/site/jacoco/**', allowEmptyArchive: true
                 }
             }
         }
@@ -90,6 +73,7 @@ pipeline {
                     sh 'npm ci'
                     sh 'npm run lint'
                     sh 'npm run build'
+                    sh 'npm audit --audit-level=high'
                 }
             }
         }
@@ -114,9 +98,9 @@ pipeline {
             steps {
                 sh 'docker build -t $BACKEND_IMAGE:$IMAGE_TAG ./backend'
                 sh 'docker build -t $FRONTEND_IMAGE:$IMAGE_TAG ./frontend'
-                sh 'docker build -t $CATALOG_IMAGE:$IMAGE_TAG ./services/catalog-service'
-                sh 'docker build -t $ORDERS_IMAGE:$IMAGE_TAG ./services/orders-service'
-                sh 'docker build -t $INVENTORY_IMAGE:$IMAGE_TAG ./services/inventory-service'
+                sh 'docker build -t $CATALOG_IMAGE:$IMAGE_TAG -f ./services/catalog-service/Dockerfile .'
+                sh 'docker build -t $ORDERS_IMAGE:$IMAGE_TAG -f ./services/orders-service/Dockerfile .'
+                sh 'docker build -t $INVENTORY_IMAGE:$IMAGE_TAG -f ./services/inventory-service/Dockerfile .'
             }
         }
 
@@ -142,6 +126,8 @@ pipeline {
                 sh '''
                     set -eu
                     command -v helm
+                    helm lint ./helm/frontend
+                    helm template bookstore-frontend ./helm/frontend --namespace bookstore > /tmp/frontend-rendered.yaml
                     helm lint ./helm/bookstore
                     helm template bookstore ./helm/bookstore --namespace bookstore > /tmp/bookstore-rendered.yaml
                     test -s /tmp/bookstore-rendered.yaml
@@ -154,47 +140,66 @@ pipeline {
                     helm lint ./helm/inventory-service
                     helm template inventory-service ./helm/inventory-service --namespace bookstore > /tmp/inventory-rendered.yaml
                     test -s /tmp/inventory-rendered.yaml
+                    for chart in catalog-service orders-service inventory-service; do
+                      helm template "$chart" "./helm/$chart" --namespace bookstore \
+                        --set database.createSecret=true --set database.password=lab-only > "/tmp/$chart-lab.yaml"
+                      grep -q 'kind: Secret' "/tmp/$chart-lab.yaml"
+                      if helm template "$chart" "./helm/$chart" --set database.createSecret=true >/dev/null 2>&1; then
+                        echo "ERROR: $chart must refuse createSecret without a password"; exit 1
+                      fi
+                    done
+                    helm template bookstore-frontend ./helm/frontend --namespace bookstore \
+                      --set service.type=NodePort --set service.nodePort=30080 > /tmp/frontend-lab.yaml
+                    grep -q 'nodePort: 30080' /tmp/frontend-lab.yaml
                 '''
             }
         }
 
         stage('Compose integration smoke test') {
             steps {
-                sh 'docker compose up --build -d'
+                sh 'FRONTEND_PORT=18080 CATALOG_PORT=18081 ORDERS_PORT=18082 INVENTORY_PORT=18083 COMPOSE_UP_LOG=compose-up.log sh scripts/compose-up.sh'
                 sh '''
                     set -eu
+                    # The pipeline uses its own host ports so it never collides
+                    # with the local kind lab (8080-8083).
+                    FRONTEND_PORT=${FRONTEND_PORT:-18080}
+                    CATALOG_PORT=${CATALOG_PORT:-18081}
+                    ORDERS_PORT=${ORDERS_PORT:-18082}
+                    INVENTORY_PORT=${INVENTORY_PORT:-18083}
+                    export FRONTEND_PORT CATALOG_PORT ORDERS_PORT INVENTORY_PORT
                     attempt=0
-                    until curl --fail --silent http://localhost:5000/api/ready; do
-                      attempt=$((attempt + 1))
-                      if [ "$attempt" -ge 20 ]; then
-                        docker compose logs
-                        exit 1
-                      fi
-                      sleep 3
-                    done
-                    curl --fail --silent http://localhost:5000/api/books | grep -q "DevOps for Beginners"
-                    curl --fail --silent http://localhost:8080/ > /dev/null
-                    curl --fail --silent http://localhost:8080/api/catalog/books | grep -q "Kubernetes Basics"
-                    attempt=0
-                    until curl --fail --silent http://localhost:8081/actuator/health/readiness | grep -q '"status":"UP"'; do
+                    until curl --fail --silent "http://localhost:$CATALOG_PORT/actuator/health/readiness" | grep -q '"status":"UP"'; do
                       attempt=$((attempt + 1))
                       if [ "$attempt" -ge 20 ]; then docker compose logs; exit 1; fi
                       sleep 3
                     done
-                    curl --fail --silent http://localhost:8081/api/catalog/books | grep -q "Kubernetes Basics"
+                    curl --fail --silent http://localhost:$FRONTEND_PORT/ > /dev/null
+                    curl --fail --silent http://localhost:$FRONTEND_PORT/api/catalog/books | grep -q "Kubernetes Basics"
+                    curl --fail --silent http://localhost:$CATALOG_PORT/api/catalog/books | grep -q "Kubernetes Basics"
                     attempt=0
-                    until curl --fail --silent http://localhost:8082/actuator/health/readiness | grep -q '"status":"UP"'; do
+                    until curl --fail --silent http://localhost:$ORDERS_PORT/actuator/health/readiness | grep -q '"status":"UP"'; do
                       attempt=$((attempt + 1)); if [ "$attempt" -ge 20 ]; then docker compose logs; exit 1; fi; sleep 3
                     done
                     attempt=0
-                    until curl --fail --silent http://localhost:8083/actuator/health/readiness | grep -q '"status":"UP"'; do
+                    until curl --fail --silent http://localhost:$INVENTORY_PORT/actuator/health/readiness | grep -q '"status":"UP"'; do
                       attempt=$((attempt + 1)); if [ "$attempt" -ge 20 ]; then docker compose logs; exit 1; fi; sleep 3
                     done
-                    curl --fail --silent http://localhost:8082/api/orders | grep -q "CREATED"
-                    curl --fail --silent http://localhost:8083/api/inventory | grep -q "availableQuantity"
-                    curl --fail --silent http://localhost:8080/api/orders | grep -q "CREATED"
-                    curl --fail --silent http://localhost:8080/api/inventory | grep -q "availableQuantity"
+                    curl --fail --silent http://localhost:$ORDERS_PORT/api/orders | grep -q "CREATED"
+                    # Checkout pipeline gauges must be scraped from the real container.
+                    curl --fail --silent http://localhost:$ORDERS_PORT/actuator/prometheus | grep -q "checkout_outbox_pending"
+                    # Flyway must own the schema in a fresh database: V2 is the
+                    # latest migration, so the last applied version has to be 2.
+                    for target in "catalog-database cataloguser catalogdb" "orders-database serviceuser ordersdb" "inventory-database serviceuser inventorydb"; do
+                      set -- $target
+                      docker compose exec -T "$1" psql -U "$2" -d "$3" -tAc "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank" | tail -n 1 | tr -d "[:space:]" | grep -qx 2
+                    done
+                    curl --fail --silent http://localhost:$INVENTORY_PORT/api/inventory | grep -q "availableQuantity"
+                    curl --fail --silent http://localhost:$FRONTEND_PORT/api/orders | grep -q "CREATED"
+                    curl --fail --silent http://localhost:$FRONTEND_PORT/api/inventory | grep -q "availableQuantity"
                 '''
+                sh 'python3 scripts/smoke-test.py --base-url http://localhost:18080'
+                sh 'sh scripts/database-backup.sh backups/ci'
+                sh 'sh scripts/database-restore-test.sh backups/ci'
             }
             post {
                 always {
@@ -271,10 +276,26 @@ pipeline {
                 }
             }
         }
+        stage('Prepare reviewed GitOps release') {
+            when {
+                allOf {
+                    branch 'main'
+                    expression { params.PUBLISH_IMAGES }
+                }
+            }
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_TOKEN')]) {
+                    sh 'python3 scripts/prepare-release.py --registry "docker.io/$DOCKERHUB_USERNAME" --revision "$IMAGE_TAG" --branch main'
+                }
+                archiveArtifacts artifacts: 'deploy/releases/bookstore.json', fingerprint: true
+                echo 'Review and commit the release manifest to Git, then apply it to Argo CD; CI does not mutate the cluster.'
+            }
+        }
     }
 
     post {
         always {
+            archiveArtifacts artifacts: 'compose-up.log', allowEmptyArchive: true
             sh 'docker image ls "$BACKEND_IMAGE" --format "{{.Repository}}:{{.Tag}}" || true'
             sh 'docker image ls "$FRONTEND_IMAGE" --format "{{.Repository}}:{{.Tag}}" || true'
             sh 'docker image ls "$CATALOG_IMAGE" --format "{{.Repository}}:{{.Tag}}" || true'

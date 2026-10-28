@@ -1,0 +1,36 @@
+replicaCount: 1
+image:
+  repository: bookstore-frontend
+  tag: local
+  pullPolicy: IfNotPresent
+service:
+  type: ClusterIP
+  port: 80
+  # Set with type=NodePort to expose a fixed port (used by the local kind lab).
+  nodePort: ""
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+imagePullSecrets: []
+networkPolicy:
+  enabled: false
+ingress:
+  enabled: false
+  className: nginx
+  host: bookstore.example.com
+  annotations: {}
+  tls: []
+# Availability: a node drain must never take the last healthy replica with it.
+podDisruptionBudget:
+  enabled: true
+  minAvailable: ""
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 75

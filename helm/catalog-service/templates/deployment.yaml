@@ -6,7 +6,9 @@ metadata:
     app.kubernetes.io/name: catalog-service
     app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
+  {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
+  {{- end }}
   selector:
     matchLabels:
       app.kubernetes.io/name: catalog-service
@@ -17,6 +19,11 @@ spec:
         app.kubernetes.io/name: catalog-service
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -29,8 +36,15 @@ spec:
           env:
             - name: SERVER_PORT
               value: "8081"
+            # Distributed tracing: OTLP/HTTP export, sampling default 0 (off).
+            {{- if .Values.observability.tracing.endpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.observability.tracing.endpoint | quote }}
+            {{- end }}
+            - name: OTEL_SAMPLING_PROBABILITY
+              value: {{ .Values.observability.tracing.samplingProbability | quote }}
             - name: SPRING_DATASOURCE_URL
-              value: "jdbc:postgresql://{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}"
+              value: "jdbc:postgresql://{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}{{ if .Values.database.sslmode }}?sslmode={{ .Values.database.sslmode }}{{ end }}"
             - name: SPRING_DATASOURCE_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -41,6 +55,17 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.database.existingSecret }}
                   key: password
+            # Managed PostgreSQL in production: TLS and a bounded pool.
+            - name: SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE
+              value: {{ .Values.database.hikari.maximumPoolSize | quote }}
+            - name: SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT
+              value: {{ .Values.database.hikari.connectionTimeoutMs | quote }}
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness

@@ -1,0 +1,16 @@
+# Single-node cluster for the local lab. The host port is mapped to the
+# frontend's NodePort so the app is reachable without port-forwarding.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: bookstore-lab
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # Frontend NodePort (LAB_HTTP_PORT / LAB_NODE_PORT in scripts/lab.sh).
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP
+      # Reserved for an optional ingress controller's HTTPS listener.
+      - containerPort: 30443
+        hostPort: 8443
+        protocol: TCP

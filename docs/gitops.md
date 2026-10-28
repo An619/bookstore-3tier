@@ -1,5 +1,9 @@
 # Helm and Argo CD GitOps
 
+> For the current microservices-only stack and release workflow, see
+> [Microservices build and delivery](microservices-delivery.md). Legacy instructions
+> below are retained for reference; the Node API now requires `--profile legacy`.
+
 ## Render the chart locally
 From the repository root, with Helm installed:
 

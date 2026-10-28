@@ -1,0 +1,80 @@
+name: Load test
+
+# Turns the SLOs into measured numbers instead of aspirational ones.
+#
+# Manual or nightly: it boots the whole stack with Compose (the cheapest real
+# environment), runs perf/checkout-load.js and fails when a threshold is missed
+# (p95 > 1.5s, >0.5% failed requests, <95% checkouts confirmed).
+#
+# Not part of the pull-request pipeline: it takes ~10 minutes and its result
+# depends on the runner's CPU, so it would make ordinary PRs flaky.
+
+on:
+  workflow_dispatch:
+    inputs:
+      vus:
+        description: 'Virtual users at peak'
+        default: '25'
+      duration:
+        description: 'Peak duration (e.g. 2m, 5m)'
+        default: '2m'
+      checkout-ratio:
+        description: 'Share of iterations that check out'
+        default: '0.15'
+  schedule:
+    - cron: '30 4 * * 1'   # Mondays, after the security scan
+
+permissions:
+  contents: read
+
+concurrency:
+  group: load-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  K6_IMAGE: grafana/k6:0.54.0
+
+jobs:
+  load:
+    name: Checkout load test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start the stack
+        env:
+          COMPOSE_UP_LOG: compose-up.log
+        run: |
+          if ! sh scripts/compose-up.sh; then
+            tail -n 80 compose-up.log || true
+            echo "::error::the stack did not start"
+            exit 1
+          fi
+
+      - name: Wait for the API
+        run: python3 scripts/smoke-test.py --base-url http://localhost:8080 --check-only --timeout 300
+
+      - name: Run k6
+        run: |
+          set -eu
+          mkdir -p perf-results
+          docker run --rm --network host \
+            -v "$PWD/perf:/scripts" -v "$PWD/perf-results:/results" \
+            -e BASE_URL=http://localhost:8080 \
+            -e VUS='${{ inputs.vus || '25' }}' \
+            -e DURATION='${{ inputs.duration || '2m' }}' \
+            -e CHECKOUT_RATIO='${{ inputs['checkout-ratio'] || '0.15' }}' \
+            "$K6_IMAGE" run --summary-export /results/summary.json /scripts/checkout-load.js
+
+      - name: Upload the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-test-results
+          path: perf-results/
+          retention-days: 30
+
+      - name: Compose logs on failure
+        if: failure()
+        run: docker compose logs --tail=120 || true

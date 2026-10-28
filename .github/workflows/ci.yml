@@ -20,10 +20,10 @@ jobs:
     timeout-minutes: 35
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -36,31 +36,49 @@ jobs:
         run: |
           npm ci
           npm test
+          npm audit --audit-level=high
 
       - name: Set up Java for Maven microservice
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
           cache: maven
 
-      - name: Validate Java catalog microservice
-        working-directory: services/catalog-service
+      - name: Verify all Maven microservices and coverage
         run: |
-          for attempt in 1 2 3; do
-            mvn -B -ntp verify && exit 0
-            echo "Maven attempt $attempt failed; retrying in case the artifact repository is temporarily unavailable"
-            sleep $((attempt * 5))
-          done
-          exit 1
+          set +e
+          mvn -B -ntp verify > /tmp/maven.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            # Annotations are the only part of this log reachable from the API, so
+            # put the real errors first instead of the "Tests run" summaries.
+            if grep -q '\[ERROR\]' /tmp/maven.log; then
+              grep '\[ERROR\]' /tmp/maven.log | head -20 | sed 's/^/::error::/'
+            else
+              tail -n 20 /tmp/maven.log | sed 's/^/::error::/'
+            fi
+            tail -n 40 /tmp/maven.log
+          fi
+          exit "$status"
 
-      - name: Validate orders microservice
-        working-directory: services/orders-service
-        run: mvn -B -ntp verify
-
-      - name: Validate inventory microservice
-        working-directory: services/inventory-service
-        run: mvn -B -ntp verify
+      - name: Test GitOps release generation
+        run: |
+          python3 --version
+          set +e
+          python3 -m unittest discover -s tests -v > /tmp/python-tests.log 2>&1
+          status=$?
+          tail -n 80 /tmp/python-tests.log
+          if [ "$status" -ne 0 ]; then
+            # Annotations are the only failure detail visible in the PR checks UI.
+            grep -E "^(FAIL|ERROR):" /tmp/python-tests.log | head -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            grep -E "^(AssertionError|.*Error:|=+$|Traceback)" /tmp/python-tests.log | head -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+          fi
+          exit "$status"
 
       - name: Validate frontend
         working-directory: frontend
@@ -68,14 +86,20 @@ jobs:
           npm ci
           npm run lint
           npm run build
+          npm audit --audit-level=high
 
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
         with:
           version: v3.17.3
 
+      - name: Lint and render every chart profile
+        run: sh scripts/check-charts.sh
+
       - name: Lint and render Helm charts
         run: |
+          helm lint ./helm/frontend
+          helm template bookstore-frontend ./helm/frontend --namespace bookstore > /tmp/frontend-rendered.yaml
           helm lint ./helm/bookstore
           helm template bookstore ./helm/bookstore --namespace bookstore > /tmp/bookstore-rendered.yaml
           test -s /tmp/bookstore-rendered.yaml
@@ -89,22 +113,58 @@ jobs:
           helm template inventory-service ./helm/inventory-service --namespace bookstore > /tmp/inventory-rendered.yaml
           test -s /tmp/inventory-rendered.yaml
 
-      - name: Build and start three-tier stack
-        run: docker compose up --build -d
+      - name: Validate rendered manifests against the Kubernetes schemas
+        run: |
+          set -eu
+          version=v0.6.7
+          curl -sSfL -o /tmp/kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/${version}/kubeconform-linux-amd64.tar.gz"
+          tar -xzf /tmp/kubeconform.tar.gz -C /tmp kubeconform
+          sudo install -m 0755 /tmp/kubeconform /usr/local/bin/kubeconform
+          kubeconform -v
+          sh scripts/validate-manifests.sh
+
+      - name: Validate lab chart options
+        run: |
+          set -eu
+          for chart in catalog-service orders-service inventory-service; do
+            helm template "$chart" "./helm/$chart" --namespace bookstore \
+              --set database.createSecret=true --set database.password=lab-only > "/tmp/$chart-lab.yaml"
+            grep -q 'kind: Secret' "/tmp/$chart-lab.yaml"
+            if helm template "$chart" "./helm/$chart" --set database.createSecret=true >/dev/null 2>&1; then
+              echo "ERROR: $chart must refuse createSecret without a password"
+              exit 1
+            fi
+          done
+          helm template bookstore-frontend ./helm/frontend --namespace bookstore \
+            --set service.type=NodePort --set service.nodePort=30080 > /tmp/frontend-lab.yaml
+          grep -q 'nodePort: 30080' /tmp/frontend-lab.yaml
+          # Killercoda profile: reduced requests must still render.
+          for chart in catalog-service orders-service inventory-service; do
+            helm template "$chart" "./helm/$chart" --namespace bookstore \
+              --set database.createSecret=true --set database.password=lab-only \
+              --set resources.requests.memory=128Mi --set resources.limits.memory=384Mi \
+              --set database.storage=1Gi > "/tmp/$chart-light.yaml"
+            grep -q 'memory: 128Mi' "/tmp/$chart-light.yaml"
+          done
+          # Avoid a PyYAML dependency on the runner: assert the key fields.
+          grep -q 'not used by the default deployment path' deploy/eks/optional/ebs-storageclass.yaml
+
+      - name: Build and start microservices stack
+        env:
+          COMPOSE_UP_LOG: compose-up.log
+        run: |
+          if ! sh scripts/compose-up.sh; then
+            # The full log is an artifact, but annotations are readable from the
+            # API, so surface the most useful lines inline before failing.
+            grep -E "ERROR|Error|error|Exception|failed|FAILURE" compose-up.log \
+              | tail -n 8 | sed 's/^/::error::/' || true
+            exit 1
+          fi
 
       - name: Smoke test API and frontend proxy
         run: |
           set -eu
-          for attempt in $(seq 1 30); do
-            if curl --fail --silent http://localhost:5000/api/ready; then
-              break
-            fi
-            if [ "$attempt" -eq 30 ]; then
-              docker compose logs
-              exit 1
-            fi
-            sleep 3
-          done
           for service_port in 8081 8082 8083; do
             for attempt in $(seq 1 40); do
               if curl --fail --silent "http://localhost:${service_port}/actuator/health/readiness" | grep -q '"status":"UP"'; then
@@ -117,14 +177,101 @@ jobs:
               sleep 3
             done
           done
-          curl --fail --silent http://localhost:5000/api/books | grep -q "DevOps for Beginners"
           curl --fail --silent http://localhost:8080/ > /dev/null
           curl --fail --silent http://localhost:8080/api/catalog/books | grep -q "Kubernetes Basics"
           curl --fail --silent http://localhost:8081/api/catalog/books | grep -q 'Kubernetes Basics'
           curl --fail --silent http://localhost:8082/api/orders | grep -q 'CREATED'
+          # The checkout gauges must be scrapeable from the running container.
+          curl --fail --silent http://localhost:8082/actuator/prometheus | grep -q 'checkout_outbox_pending'
           curl --fail --silent http://localhost:8083/api/inventory | grep -q 'availableQuantity'
           curl --fail --silent http://localhost:8080/api/orders | grep -q 'CREATED'
           curl --fail --silent http://localhost:8080/api/inventory | grep -q 'availableQuantity'
+
+      - name: Confirm Flyway applied every migration
+        run: |
+          set -eu
+          # The databases start empty in Compose, so a service only becomes ready
+          # once its own migrations have run.
+          for target in "catalog-database cataloguser catalogdb" "orders-database serviceuser ordersdb" "inventory-database serviceuser inventorydb"; do
+            set -- $target
+            history=$(docker compose exec -T "$1" psql -U "$2" -d "$3" -tAc \
+              "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank" 2>&1 || true)
+            version=$(echo "$history" | tail -n 1 | tr -d '[:space:]')
+            if [ "$version" != "2" ]; then
+              echo "::error::$1 Flyway history is '$history', expected V1 and V2 applied"
+              docker compose logs --tail=40 "${1%-database}-service" || true
+              exit 1
+            fi
+          done
+
+      - name: Exercise demo order and stock compensation
+        run: python3 scripts/smoke-test.py
+
+      - name: Enforce JWT with the local Keycloak realm
+        run: |
+          set -eu
+          docker compose --profile auth up -d keycloak
+          # Wait for the realm import, then read a real token with the repo script.
+          token=""
+          for _ in $(seq 1 60); do
+            if token=$(sh scripts/auth-token.sh 2>/dev/null); then
+              [ -n "$token" ] && break
+            fi
+            sleep 3
+          done
+          if [ -z "$token" ]; then
+            echo "::error::Keycloak did not issue a token for the demo user"
+            docker compose logs --tail=80 keycloak || true
+            exit 1
+          fi
+
+          SECURITY_JWT_ENABLED=true \
+          SECURITY_JWT_JWK_SET_URI=http://keycloak:8090/realms/bookstore/protocol/openid-connect/certs \
+            docker compose up -d --no-deps orders-service
+          for _ in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8082/actuator/health/readiness || true)
+            [ "$code" = "200" ] && break
+            sleep 3
+          done
+
+          anonymous=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8082/api/orders)
+          authorized=$(curl -s -o /tmp/orders.json -w '%{http_code}' \
+            -H "Authorization: Bearer $token" http://localhost:8082/api/orders)
+          echo "anonymous=$anonymous authorized=$authorized"
+          if [ "$anonymous" != "401" ]; then
+            echo "::error::the secured orders API answered '$anonymous' without a token, expected 401"
+            docker compose logs --tail=40 orders-service || true
+            exit 1
+          fi
+          if [ "$authorized" != "200" ] || ! grep -q 'CREATED' /tmp/orders.json; then
+            echo "::error::the demo token was rejected ('$authorized') or returned no orders"
+            docker compose logs --tail=40 orders-service || true
+            exit 1
+          fi
+          # Probes and metrics must stay public while enforcement is on.
+          curl --fail --silent http://localhost:8082/actuator/prometheus | grep -q 'checkout_outbox_pending'
+
+      - name: Verify service database backup and isolated restores
+        run: |
+          sh scripts/database-backup.sh backups/ci
+          sh scripts/database-restore-test.sh backups/ci
+
+      - name: Upload Compose diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: compose-diagnostics
+          path: compose-up.log
+          if-no-files-found: ignore
+
+      - name: Upload Maven test and coverage results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: maven-reports
+          path: |
+            services/*/target/surefire-reports/
+            services/*/target/site/jacoco/
 
       - name: Print diagnostic logs on failure
         if: failure()
@@ -139,10 +286,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: "1.9.8"
           terraform_wrapper: false

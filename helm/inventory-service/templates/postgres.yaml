@@ -1,3 +1,4 @@
+{{- if .Values.database.deploy }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -5,6 +6,7 @@ metadata:
 data:
   init.sql: |
     CREATE TABLE IF NOT EXISTS inventory_items (id BIGSERIAL PRIMARY KEY, book_id BIGINT NOT NULL UNIQUE, available_quantity INTEGER NOT NULL CHECK (available_quantity >= 0));
+    CREATE TABLE IF NOT EXISTS inventory_operations (idempotency_key VARCHAR(64) PRIMARY KEY, operation VARCHAR(16) NOT NULL, book_id BIGINT NOT NULL, quantity INTEGER NOT NULL, resulting_quantity INTEGER NOT NULL);
 ---
 apiVersion: v1
 kind: Service
@@ -67,11 +69,25 @@ spec:
         - name: init-sql
           configMap:
             name: {{ .Release.Name }}-db-init
+        {{- if not .Values.database.persistence.enabled }}
+        # storage-mode: ephemeral
+        # No volume, so no CSI driver or StorageClass is needed. Data is lost
+        # whenever this pod is replaced; use for demos only.
+        - name: data
+          emptyDir: {}
+        {{- end }}
+  {{- if .Values.database.persistence.enabled }}
+  # storage-mode: persistent
   volumeClaimTemplates:
     - metadata:
         name: data
       spec:
         accessModes: ["ReadWriteOnce"]
+        {{- with .Values.database.persistence.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
         resources:
           requests:
             storage: {{ .Values.database.storage }}
+  {{- end }}
+{{- end }}

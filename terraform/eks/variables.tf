@@ -66,3 +66,9 @@ variable "node_max_size" {
   type        = number
   default     = 3
 }
+
+variable "enable_ebs_csi" {
+  description = "Create EBS-backed persistent storage (EBS CSI driver + IAM role). Disabled by default; the application runs without EBS using ephemeral or external databases."
+  type        = bool
+  default     = false
+}

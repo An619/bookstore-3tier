@@ -81,7 +81,7 @@ module "eks" {
 }
 
 resource "aws_ecr_repository" "backend" {
-  name                 = "${local.name}/backend"
+  name                 = "${local.name}-backend"
   image_tag_mutability = "IMMUTABLE"
   force_delete         = false
 
@@ -97,7 +97,7 @@ resource "aws_ecr_repository" "backend" {
 }
 
 resource "aws_ecr_repository" "frontend" {
-  name                 = "${local.name}/frontend"
+  name                 = "${local.name}-frontend"
   image_tag_mutability = "IMMUTABLE"
   force_delete         = false
 
@@ -149,7 +149,7 @@ resource "aws_ecr_lifecycle_policy" "frontend" {
 }
 
 resource "aws_ecr_repository" "catalog_service" {
-  name                 = "${local.name}/catalog-service"
+  name                 = "${local.name}-catalog-service"
   image_tag_mutability = "IMMUTABLE"
   force_delete         = false
 
@@ -183,7 +183,7 @@ resource "aws_ecr_lifecycle_policy" "catalog_service" {
 }
 
 resource "aws_ecr_repository" "orders_service" {
-  name                 = "${local.name}/orders-service"
+  name                 = "${local.name}-orders-service"
   image_tag_mutability = "IMMUTABLE"
   force_delete         = false
 
@@ -217,7 +217,7 @@ resource "aws_ecr_lifecycle_policy" "orders_service" {
 }
 
 resource "aws_ecr_repository" "inventory_service" {
-  name                 = "${local.name}/inventory-service"
+  name                 = "${local.name}-inventory-service"
   image_tag_mutability = "IMMUTABLE"
   force_delete         = false
 
@@ -248,4 +248,60 @@ resource "aws_ecr_lifecycle_policy" "inventory_service" {
       action = { type = "expire" }
     }]
   })
+}
+
+# ---------------------------------------------------------------------------
+# Optional block storage (EBS CSI driver). Disabled by default: this project is
+# designed to run without EBS. Enable only if you want persistent volumes backed
+# by EBS; otherwise use ephemeral database storage, an external database, or a
+# different StorageClass (for example EFS).
+# ---------------------------------------------------------------------------
+data "aws_iam_policy_document" "ebs_csi_assume_role" {
+  count = var.enable_ebs_csi ? 1 : 0
+
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [module.eks.oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${module.eks.oidc_provider}:sub"
+      values   = ["system:serviceaccount:kube-system:ebs-csi-controller-sa"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${module.eks.oidc_provider}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "ebs_csi" {
+  count              = var.enable_ebs_csi ? 1 : 0
+  name               = "${local.name}-ebs-csi"
+  assume_role_policy = data.aws_iam_policy_document.ebs_csi_assume_role[0].json
+  tags               = local.common_tags
+}
+
+resource "aws_iam_role_policy_attachment" "ebs_csi" {
+  count      = var.enable_ebs_csi ? 1 : 0
+  role       = aws_iam_role.ebs_csi[0].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
+
+resource "aws_eks_addon" "ebs_csi" {
+  count                       = var.enable_ebs_csi ? 1 : 0
+  cluster_name                = module.eks.cluster_name
+  addon_name                  = "aws-ebs-csi-driver"
+  service_account_role_arn    = aws_iam_role.ebs_csi[0].arn
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "PRESERVE"
+
+  depends_on = [module.eks]
 }

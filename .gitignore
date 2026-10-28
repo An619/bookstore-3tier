@@ -32,3 +32,23 @@ crash.log
 crash.*.log
 terraform.tfvars
 terraform.tfvars.json
+
+# Maven output
+**/target/
+__pycache__/
+
+# Local Python validation environment
+.venv/
+
+# Database backups may contain sensitive data
+backups/
+*.dump
+*.dump.partial
+
+# Local lab credentials
+.env
+deploy/local/ci/.env
+
+# Local lab: downloaded tools and generated secrets must never be committed
+.tools/
+deploy/local/.secrets/
