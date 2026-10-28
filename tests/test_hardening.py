@@ -269,6 +269,24 @@ class LoadTestConfigTest(unittest.TestCase):
         self.assertIn('--check-only', workflow, 'the API must be ready before the test starts')
 
 
+class SecurityDocTest(unittest.TestCase):
+    def test_known_findings_are_documented(self):
+        doc = read('docs/security.md')
+        self.assertIn('CVE-2026-47884', doc)
+        self.assertIn('CVE-2026-65182', doc)
+        self.assertIn('.trivyignore', doc)
+        # The doc must not claim a clean scan while exceptions exist.
+        self.assertIn('Accepted', doc)
+        self.assertIn('Open', doc)
+
+    def test_every_ignored_cve_appears_in_the_doc(self):
+        doc = read('docs/security.md')
+        for line in read('.trivyignore').splitlines():
+            if line.startswith('CVE-'):
+                self.assertIn(line.split()[0], doc,
+                              'an accepted finding must be explained in docs/security.md')
+
+
 class DeliveryHygieneTest(unittest.TestCase):
     def test_renovate_config_is_valid_and_pins_actions(self):
         config = json.loads(read('renovate.json'))

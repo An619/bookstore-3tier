@@ -12,9 +12,6 @@ name: Security scan
 # caught there; this workflow answers "is what we ship vulnerable?".
 
 on:
-  # TEMPORARY: exercise this workflow once on the pull request, then remove.
-  pull_request:
-    branches: [main]
   schedule:
     - cron: '0 3 * * 1'   # Mondays, 03:00 UTC
   workflow_dispatch:
