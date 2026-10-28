@@ -10,7 +10,11 @@ RUN mvn -B -ntp verify
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
-RUN apk add --no-cache wget && addgroup -S -g 10001 app && adduser -S -D -H -u 10001 -G app app
+# Patch the Alpine packages with the same base image, then drop privileges.
+# The base tag is pinned in the repository, the point release is not.
+RUN apk upgrade --no-cache \
+ && apk add --no-cache wget \
+ && addgroup -S -g 10001 app && adduser -S -D -H -u 10001 -G app app
 COPY --from=build --chown=10001:10001 /workspace/services/orders-service/target/orders-service.jar /app/app.jar
 USER 10001:10001
 EXPOSE 8082
