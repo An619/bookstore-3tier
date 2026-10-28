@@ -256,6 +256,7 @@ print_summary() {
 
 The application is running: http://localhost:$http_port
 
+  make lab-verify   # prove it: pods, migrations, checkout, pod-kill recovery
   make lab-logs     # follow application logs
   make lab-down     # delete the disposable cluster and its data
   make lab-ci       # optional Jenkins + SonarQube lab

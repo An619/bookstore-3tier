@@ -42,6 +42,7 @@ creates the `bookstore-pipeline` job. Then run `make ci-run` to execute it.
 | `make lab-argocd` | Deploy through Argo CD instead of Helm (`kubectl` required) |
 | `make lab-ci` | Start Jenkins + SonarQube (or reuse existing data) |
 | `make auth` / `make auth-token` | Start the local Keycloak realm / print a demo JWT |
+| `make auth-cluster` / `make auth-cluster-secure` | Run that realm inside the cluster and turn enforcement on |
 | `make ci-run` | Trigger the pipeline once |
 | `make lab-ci-run` | Do both of the above in one command |
 | `make ci-status` | Show the lab URLs and generated passwords |

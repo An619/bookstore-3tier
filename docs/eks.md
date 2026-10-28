@@ -12,7 +12,7 @@ destroy everything when finished.
 | Review planned changes | `make eks-plan` | No changes; requires a filled `terraform.tfvars` |
 | Create cluster + ECR | `make eks-apply` | VPC, EKS, managed nodes, 5 ECR repos. **No EBS by default.** Type the cluster name to confirm; `EKS_AUTO_APPROVE=true` skips (CI only) |
 | Push images | `make eks-images` | Four images tagged with the 12-character commit SHA |
-| Install workloads | `make eks-deploy` | gp3 StorageClass, database Secrets, Helm releases from ECR |
+| Install workloads | `make eks-deploy` | Database Secrets, Helm releases from ECR, `EKS_DB_STORAGE=ephemeral` (no EBS) unless you override it |
 | Reviewed GitOps manifest | `make eks-release` | Writes `deploy/releases/bookstore-lab.json` for Argo CD |
 | Verify | `make eks-verify` | `scripts/verify-deploy.sh` against the load balancer: rollouts, pod health, Flyway versions, checkout saga |
 | Check | `make eks-status` | Pods plus the frontend load-balancer hostname |
