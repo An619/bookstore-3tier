@@ -75,8 +75,11 @@ jobs:
               --output "/out/$image.cdx.json" "bookstore/$image:scan"
 
             echo "==> $image (gate: $FAIL_ON with a fix available)"
-            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" \
+            # .trivyignore holds documented exceptions (reason, owner, expiry).
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$PWD/.trivyignore:/work/.trivyignore:ro" "$TRIVY_IMAGE" \
               image --quiet --ignore-unfixed --severity "$FAIL_ON" --exit-code 1 \
+              --ignorefile /work/.trivyignore \
               "bookstore/$image:scan" || {
                 echo "::error::$image has $FAIL_ON vulnerabilities that have a fix"
                 # Surface the actual packages/CVEs, limited so annotations stay readable.

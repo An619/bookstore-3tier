@@ -1,2 +1,15 @@
-# Keep empty unless a finding has been reviewed and formally accepted.
-# For every exception, document the reason, owner and expiry date in the PR.
+# Accepted image findings, read by the Security scan workflow.
+#
+# Every entry needs a reason, an owner and an expiry date (`exp:YYYY-MM-DD`);
+# Trivy ignores the entry again after that date, so an exception cannot rot
+# silently. Keep this file short: the default is to fix, not to ignore.
+#
+# CVE-2026-47884 - spring-webmvc (transitive via spring-boot-starter-web).
+#   Fixed only in Spring Framework 7.0.9, i.e. the Spring Boot 4 line. The
+#   services run Boot 3.5 (Framework 6.2), where no patched release exists.
+#   Mitigation: the services do not use Spring MVC template rendering or
+#   view resolution over untrusted input; the impacted path is a remote
+#   handling flaw in annotated controllers with data binding. Tracked as the
+#   first item of the Boot 4 upgrade, which is required before production.
+#   owner: @An619
+CVE-2026-47884 exp:2026-12-31
