@@ -14,6 +14,7 @@ destroy everything when finished.
 | Push images | `make eks-images` | Four images tagged with the 12-character commit SHA |
 | Install workloads | `make eks-deploy` | gp3 StorageClass, database Secrets, Helm releases from ECR |
 | Reviewed GitOps manifest | `make eks-release` | Writes `deploy/releases/bookstore-lab.json` for Argo CD |
+| Verify | `make eks-verify` | `scripts/verify-deploy.sh` against the load balancer: rollouts, pod health, Flyway versions, checkout saga |
 | Check | `make eks-status` | Pods plus the frontend load-balancer hostname |
 | Remove workloads | `make eks-uninstall` | Uninstalls Helm releases and waits for the load balancer to go |
 | Tear down | `make eks-destroy` | Terraform destroy; type the cluster name to confirm |
@@ -60,7 +61,8 @@ which matches the Terraform repository names.
 make eks-plan      # read the plan carefully
 make eks-apply     # ~15-20 minutes
 make eks-images    # ~10 minutes (Maven builds inside Docker)
-make eks-deploy    # gp3 storage + Secrets + Helm, waits for rollouts
+make eks-deploy    # Secrets + Helm, waits for rollouts
+make eks-verify    # waits for the load balancer, then proves the deployment end to end
 make eks-status    # copy the load-balancer hostname into a browser
 ```
 

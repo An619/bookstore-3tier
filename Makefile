@@ -6,7 +6,7 @@ CI_LAB := sh deploy/local/ci/lab.sh
 
 .DEFAULT_GOAL := help
 
-.PHONY: help migrate-legacy auth auth-token lab lab-light lab-ci lab-ci-run lab-url lab-status lab-logs lab-down eks-plan eks-apply eks-images eks-deploy eks-release eks-status eks-uninstall eks-destroy ci-status ci-run ci-down ci-reset test verify frontend preflight
+.PHONY: help migrate-legacy auth auth-token auth-cluster auth-cluster-token auth-cluster-stop auth-cluster-secure lab lab-light lab-verify lab-ci lab-ci-run lab-url lab-status lab-logs lab-down eks-plan eks-apply eks-images eks-deploy eks-verify eks-release eks-status eks-uninstall eks-destroy ci-status ci-run ci-down ci-reset test verify frontend preflight
 
 migrate-legacy: ## Copy legacy books into the catalog DB (dry run first: DRY=1)
 	@if [ "$(DRY)" = "1" ]; then \
@@ -21,6 +21,18 @@ auth: ## Start the local Keycloak dev identity provider (port 8090)
 
 auth-token: ## Print a demo bearer token from the local Keycloak
 	@sh scripts/auth-token.sh
+
+auth-cluster: ## Run the lab Keycloak realm inside the cluster (after make lab)
+	sh scripts/auth-cluster.sh start
+
+auth-cluster-token: ## Print a bearer token from the in-cluster Keycloak
+	@sh scripts/auth-cluster.sh token
+
+auth-cluster-secure: ## Turn JWT enforcement on for orders and inventory in the cluster
+	sh scripts/auth-cluster.sh secure
+
+auth-cluster-stop: ## Remove the in-cluster Keycloak
+	sh scripts/auth-cluster.sh stop
 
 help: ## Show the available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -65,6 +77,9 @@ ci-reset: ## Stop Jenkins/SonarQube and delete their data
 lab-light: ## Start the lab with small requests for a 2 CPU / 4 GB machine (Killercoda)
 	sh scripts/lab.sh up --light --open
 
+lab-verify: ## Prove the lab deployment works: pods, migrations, checkout, resilience
+	sh scripts/verify-deploy.sh --url $(if $(URL),$(URL),http://localhost:8080) --resilience
+
 eks-plan: ## Terraform plan for the EKS lab (no changes)
 	sh scripts/eks.sh plan
 
@@ -79,6 +94,9 @@ eks-deploy: ## Create Secrets and install the charts from ECR images
 
 eks-release: ## Write a reviewed Argo CD manifest for the pushed commit
 	sh scripts/eks.sh release
+
+eks-verify: ## Run the same post-deploy checks against the EKS load balancer
+	sh scripts/eks.sh verify
 
 eks-status: ## Show pods and the frontend load-balancer address
 	sh scripts/eks.sh status

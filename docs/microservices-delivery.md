@@ -313,6 +313,30 @@ Lab only: the demo user password is public and the JWKS URI trusts any token
 signed by that realm (no issuer check). In a real environment use
 `security.jwt.issuer-uri` and a managed identity provider.
 
+### Testing authorization in the cluster
+
+The Compose profile proves enforcement on a laptop. To prove it inside a
+Kubernetes lab (kind or EKS), deploy the same realm next to the services:
+
+```sh
+sh scripts/auth-cluster.sh start     # admin Secret, realm ConfigMap, Deployment/Service
+sh scripts/auth-cluster.sh token     # port-forward :8090, print a demo bearer token
+sh scripts/auth-cluster.sh secure    # redeploy orders+inventory with JWT on
+sh scripts/auth-cluster.sh insecure  # put them back to the lab default
+sh scripts/auth-cluster.sh stop      # remove Keycloak and its Secret/ConfigMap
+```
+
+`start` imports `deploy/local/auth/bookstore-realm.json` as the `bookstore-realm`
+ConfigMap, so Compose and the cluster cannot drift, and stores the generated admin
+password in `.tools/` (git-ignored) instead of a manifest. `secure` points both
+charts at the in-cluster JWKS URI
+(`http://keycloak:8080/realms/bookstore/protocol/openid-connect/certs`) and waits
+for the rollout; an anonymous `/api/orders` then answers 401 and the demo token
+answers 200. `deploy/kubernetes/auth/keycloak.yaml` runs `start-dev` over plain
+HTTP with a public demo password - it exists to be practised with, not exposed.
+On EKS the Helm releases carry the project prefix, so pass it through:
+`AUTH_RELEASE_PREFIX=bookstore-lab- sh scripts/auth-cluster.sh secure`.
+
 ## Local Kubernetes lab
 
 Two commands run everything locally (details in `docs/QUICKSTART.md` and

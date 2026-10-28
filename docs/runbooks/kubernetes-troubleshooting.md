@@ -2,6 +2,19 @@
 
 Use the actual namespace and resource names from your cluster; the examples below assume namespace `bookstore`.
 
+## Start here: is the deployment actually healthy?
+
+```sh
+sh scripts/verify-deploy.sh                     # kind lab, http://localhost:8080
+sh scripts/verify-deploy.sh --url http://<lb-hostname> --resilience
+```
+
+It checks rollouts, pod readiness/restarts, `flyway_schema_history` in each
+service database, the checkout smoke test and (with `--resilience`) that killing
+the orders pod does not break the API. Exit code 0 means all checks passed; the
+`FAIL` lines name what to investigate, which is usually enough to pick a section
+below.
+
 ## First-response commands
 
 ```bash

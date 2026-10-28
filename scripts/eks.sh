@@ -234,6 +234,26 @@ case "$action" in
     python3 scripts/prepare-release.py --registry "$reg" --repository-prefix "$prefix" \
       --revision "$revision" --branch "$(git rev-parse --abbrev-ref HEAD)" --output "$output"
     ;;
+  verify)
+    kubeconfig
+    need kubectl
+    info 'Waiting for the frontend load balancer to get an address'
+    address=''
+    # Ten minutes by default; EKS_LB_WAIT_ATTEMPTS exists for tests.
+    for _ in $(seq 1 "${EKS_LB_WAIT_ATTEMPTS:-60}"); do
+      address=$(kubectl -n "$namespace" get service bookstore-frontend \
+        -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+      [ -n "$address" ] && break
+      sleep 10
+    done
+    [ -n "$address" ] || die 'The frontend Service has no load-balancer address yet. Check: kubectl -n '"$namespace"' describe service bookstore-frontend'
+    info "Verifying https://$address"
+    # The AWS load balancer needs a moment before it routes traffic.
+    # EKS_VERIFY_ARGS forwards flags such as --skip-smoke or --max-restarts 2.
+    # shellcheck disable=SC2086
+    sh scripts/verify-deploy.sh --namespace "$namespace" --url "http://$address" \
+      --timeout 600 ${EKS_VERIFY_ARGS:-}
+    ;;
   status)
     kubeconfig
     kubectl -n "$namespace" get deploy,pods,svc 2>/dev/null || true

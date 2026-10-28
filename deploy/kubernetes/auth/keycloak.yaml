@@ -1,0 +1,105 @@
+# LAB ONLY Keycloak, for exercising JWT enforcement inside the cluster.
+#
+# Created by `sh scripts/auth-cluster.sh start`, which also imports the realm
+# from deploy/local/auth/bookstore-realm.json as the ConfigMap `bookstore-realm`
+# and creates the admin Secret. Never use this in a shared cluster: it runs
+# start-dev (plain HTTP, no TLS) with a demo user whose password is public.
+#
+#   sh scripts/auth-cluster.sh start     # apply, wait, print a demo token
+#   sh scripts/auth-cluster.sh token     # port-forward + print a fresh token
+#   sh scripts/auth-cluster.sh stop      # delete everything this file creates
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: bookstore
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/part-of: bookstore
+  annotations:
+    bookstore.io/purpose: "lab identity provider - not for production"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: keycloak
+        app.kubernetes.io/part-of: bookstore
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.0
+          args:
+            - start-dev
+            - --import-realm
+            - --http-port=8080
+            - --hostname-strict=false
+          env:
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: admin
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin
+                  key: password
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /realms/bookstore
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: realm-import
+              mountPath: /opt/keycloak/data/import/bookstore-realm.json
+              subPath: bookstore-realm.json
+              readOnly: true
+      volumes:
+        - name: realm-import
+          configMap:
+            name: bookstore-realm
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: bookstore
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/part-of: bookstore
+spec:
+  selector:
+    app.kubernetes.io/name: keycloak
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+# The orders and inventory services only need the JWKS endpoint. A NetworkPolicy
+# is optional here: the charts create their own when networkPolicy.enabled=true,
+# so keep this file limited to what Keycloak itself needs.

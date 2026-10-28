@@ -36,6 +36,7 @@ creates the `bookstore-pipeline` job. Then run `make ci-run` to execute it.
 | --- | --- |
 | `make lab` | Bring the application up (or update it after code changes) |
 | `make lab-light` | Same, with small requests/storage for a 2 CPU / 4 GB machine |
+| `make lab-verify` | Prove the deployment: pods, migrations, checkout saga, pod-kill recovery |
 | `make lab-status` / `make lab-logs` | Inspect the cluster / follow logs |
 | `make lab-down` | Delete the lab cluster and its data |
 | `make lab-argocd` | Deploy through Argo CD instead of Helm (`kubectl` required) |
@@ -47,12 +48,32 @@ creates the `bookstore-pipeline` job. Then run `make ci-run` to execute it.
 | `make ci-reset` | Delete Jenkins/SonarQube data and start over |
 | `make verify` | Run the tests that need no Docker (Python, frontend, Maven) |
 
+## Did it actually work?
+
+`make lab` ends with a smoke test, but a pass does not tell you whether a pod is
+restarting or a database is on an older migration. One command answers it:
+
+```sh
+make lab-verify                                   # adds --resilience
+sh scripts/verify-deploy.sh --skip-smoke          # quick re-check, no order written
+sh scripts/verify-deploy.sh --url http://<host>   # any reachable entry point
+```
+
+It checks, in order: every rollout completes; no pod is unready, crash-looping or
+restarting more than `--max-restarts` (default 0) times; `flyway_schema_history`
+reaches the expected version in each service database (external databases are
+skipped, not failed); the end-to-end checkout smoke test passes through the public
+entry point; and with `--resilience`, deleting the orders pod does not break the
+API. Exit code 0 means every executed check passed, so it is safe to use in a
+pipeline.
+
 ## Practise, then deploy for real
 
 1. **Killercoda** — `docs/killercoda.md` has the exact clone, install and
    `make lab-light` steps for the browser VM, plus what cannot be practised there.
 2. **EKS** — `docs/eks.md`: fill `terraform/eks/terraform.tfvars`, then
-   `make eks-plan`, `eks-apply`, `eks-images`, `eks-deploy`, `eks-status`, and
+   `make eks-plan`, `eks-apply`, `eks-images`, `eks-deploy`, `eks-verify`,
+   `eks-status`, and
    `eks-destroy` when finished. No EBS is required: the default
    `EKS_DB_STORAGE=ephemeral` runs the databases without volumes, and `pvc` or
    `external` give you durable options. The AWS bill (EKS control plane, nodes,

@@ -134,9 +134,21 @@ def smoke(base, timeout=180):
           'idempotent replay, cleanup and routing')
 
 
+def readiness_only(base, timeout):
+    """Wait until the stack serves the API, without writing any data."""
+    books, stocks = wait_until_ready(base, timeout)
+    print(f'PASS: stack is serving {len(books)} books and {len(stocks)} inventory rows')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--base-url', default='http://localhost:8080')
     parser.add_argument('--timeout', type=int, default=180)
+    parser.add_argument('--check-only', action='store_true',
+                        help='only wait for readiness; do not create an order')
     args = parser.parse_args()
-    smoke(args.base_url.rstrip('/'), args.timeout)
+    base = args.base_url.rstrip('/')
+    if args.check_only:
+        readiness_only(base, args.timeout)
+    else:
+        smoke(base, args.timeout)
