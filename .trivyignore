@@ -13,3 +13,12 @@
 #   first item of the Boot 4 upgrade, which is required before production.
 #   owner: @An619
 CVE-2026-47884 exp:2026-12-31
+#
+# CVE-2026-65182 - tomcat-embed-core. The advisory names 10.1.58 as the fix but
+#   that patch release is not published in Maven Central yet (10.1.55 is the
+#   newest available). Tomcat is embedded and only serves the services' own
+#   actuator/API endpoints behind the cluster network policy, so this is a
+#   deferred patch, not a tolerated design flaw. Bump tomcat.version to 10.1.58
+#   as soon as it resolves, and delete this line.
+#   owner: @An619
+CVE-2026-65182 exp:2026-12-15
