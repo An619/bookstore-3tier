@@ -85,6 +85,8 @@ render_and_validate frontend-nodeport helm/frontend \
 info 'Validating standalone manifests'
 validate deploy/kubernetes/auth/keycloak.yaml 'deploy/kubernetes/auth/keycloak.yaml'
 validate monitoring/slo-rules.yaml 'monitoring/slo-rules.yaml'
+validate deploy/eks/external-secrets/cluster-secret-store.yaml 'deploy/eks/external-secrets/cluster-secret-store.yaml'
+validate deploy/eks/external-secrets/external-secrets.yaml 'deploy/eks/external-secrets/external-secrets.yaml'
 if [ -f deploy/eks/optional/ebs-storageclass.yaml ]; then
   validate deploy/eks/optional/ebs-storageclass.yaml 'deploy/eks/optional/ebs-storageclass.yaml'
 fi

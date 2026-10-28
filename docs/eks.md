@@ -74,6 +74,16 @@ Service is created (AWS load balancer provisioning).
 commit's images and keeps existing database Secrets (it never regenerates
 passwords, which would break a running database).
 
+## Credentials from a secret manager (optional)
+
+The charts never create real credentials. For a shared cluster, let External
+Secrets Operator sync the three database Secrets from AWS Secrets Manager
+instead of creating them by hand: `deploy/eks/external-secrets/` has the
+`ClusterSecretStore` and one `ExternalSecret` per database, plus the IRSA steps.
+It is deliberately **not** part of `make eks-deploy`, because it needs an IAM
+role binding first. The synced Secret names match what the charts reference, so
+`make eks-deploy` picks them up unchanged.
+
 ## Availability and backups
 
 The charts already render a PodDisruptionBudget, so node drains during upgrades

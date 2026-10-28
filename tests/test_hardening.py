@@ -125,6 +125,38 @@ class BackupTest(unittest.TestCase):
         self.assertIn('activeDeadlineSeconds', template)
 
 
+class ExternalSecretsTest(unittest.TestCase):
+    """The opt-in secret-manager path must name the Secrets the charts expect."""
+
+    def test_synced_secret_names_match_the_charts(self):
+        manifest = read('deploy/eks/external-secrets/external-secrets.yaml')
+        targets = re.findall(r'name: ([a-z-]+-db-secret)', manifest)
+        self.assertEqual({'catalog-db-secret', 'orders-db-secret', 'inventory-db-secret'}, set(targets))
+        charts = {
+            'catalog-service': re.search(r'existingSecret: (\S+)', values('catalog-service')).group(1),
+            'orders-service': re.search(r'secretName: (\S+)', values('orders-service')).group(1),
+            'inventory-service': re.search(r'secretName: (\S+)', values('inventory-service')).group(1),
+        }
+        self.assertEqual(set(targets), set(charts.values()),
+                         'a synced Secret the chart does not reference is silently unused')
+
+    def test_it_is_documented_as_opt_in_and_not_applied_automatically(self):
+        readme = read('deploy/eks/external-secrets/README.md')
+        self.assertIn('not** applied by `make eks-deploy`', readme)
+        self.assertIn('IRSA', readme)
+        eks = read('docs/eks.md')
+        self.assertIn('external-secrets', eks)
+        deploy = read('scripts/eks.sh')
+        self.assertNotIn('external-secrets/external-secrets.yaml', deploy,
+                         'the operator path stays manual: it needs an IAM binding')
+
+    def test_no_secret_values_are_committed(self):
+        for path in (ROOT / 'deploy/eks/external-secrets').glob('*.yaml'):
+            text = path.read_text()
+            self.assertNotRegex(text, r'password:\s*[^<\s"]+',
+                                f'{path.name} must not carry a real password')
+
+
 class ManifestValidationTest(unittest.TestCase):
     def test_script_validates_rendered_charts(self):
         script = read('scripts/validate-manifests.sh')
@@ -136,6 +168,11 @@ class ManifestValidationTest(unittest.TestCase):
         self.assertIn('--set autoscaling.enabled=true', script)
         self.assertIn('deploy/kubernetes/auth/keycloak.yaml', script)
         self.assertIn('monitoring/slo-rules.yaml', script)
+
+    def test_external_secret_manifests_are_validated_in_ci(self):
+        script = read('scripts/validate-manifests.sh')
+        self.assertIn('external-secrets/external-secrets.yaml', script)
+        self.assertIn('ClusterSecretStore', script)
 
     def test_script_reports_errors_as_annotations(self):
         script = read('scripts/validate-manifests.sh')
@@ -239,6 +276,11 @@ class DeliveryHygieneTest(unittest.TestCase):
             self.assertTrue((ROOT / entry.lstrip('/')).exists(), f'CODEOWNERS names a missing path: {entry}')
         for required in ('/helm/', '/terraform/', '/contracts/', '/services/'):
             self.assertIn(required, entries)
+
+    def test_verify_deploy_checks_the_disruption_budgets(self):
+        script = read('scripts/verify-deploy.sh')
+        self.assertIn('get poddisruptionbudgets', script)
+        self.assertIn('check_disruption_budgets', script)
 
     def test_make_targets_expose_the_new_checks(self):
         makefile = read('Makefile')

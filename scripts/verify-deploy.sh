@@ -153,6 +153,23 @@ check_flyway() {
   done
 }
 
+# A PDB that does not exist is the difference between a safe drain and an outage.
+check_disruption_budgets() {
+  info 'Checking PodDisruptionBudgets'
+  if ! kubectl -n "$namespace" get poddisruptionbudgets >/dev/null 2>&1; then
+    ok 'no PodDisruptionBudgets in this namespace (charts rendered with podDisruptionBudget.enabled=false)'
+    return 0
+  fi
+  budgets=$(kubectl -n "$namespace" get poddisruptionbudgets --no-headers 2>/dev/null | wc -l | tr -d ' ')
+  allowed=$(kubectl -n "$namespace" get poddisruptionbudgets --no-headers 2>/dev/null \
+    | awk '$2 != "0" {count++} END {print count + 0}')
+  if [ "${budgets:-0}" -ge 1 ] && [ "${allowed:-0}" -ge 1 ]; then
+    ok "$allowed of $budgets disruption budget(s) allow a healthy eviction"
+  else
+    bad "no PodDisruptionBudget allows an eviction; node drains would be blocked"
+  fi
+}
+
 check_smoke() {
   info "Running the end-to-end smoke test against $base_url"
   if python3 scripts/smoke-test.py --base-url "$base_url" --timeout "$timeout"; then
@@ -194,6 +211,7 @@ check_resilience() {
 info "Verifying namespace '$namespace' through $base_url"
 check_rollouts
 check_pods
+check_disruption_budgets
 check_flyway
 if [ "$do_smoke" = true ]; then
   check_smoke

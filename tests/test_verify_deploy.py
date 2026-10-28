@@ -22,6 +22,10 @@ case "$*" in
     [ -n "${VERIFY_TEST_NO_LB:-}" ] && exit 0
     printf '%s' "${VERIFY_TEST_LB:-k8s-bookstore-frontend-123.ap-south-1.elb.amazonaws.com}"
     ;;
+  *"get poddisruptionbudgets"*)
+    printf '%s\n' "catalog-service   1         1         1   5m"
+    printf '%s\n' "orders-service    1         1         1   5m"
+    ;;
   *"get pods -l"*)
     echo "orders-service-6c8-def   1/1   Running   0   5m"
     ;;
