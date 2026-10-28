@@ -18,7 +18,7 @@ for tool in kind helm kubectl java mvn node npm; do
     case "$tool" in
       kind) printf 'AUTO    kind (downloaded, checksum-verified, by make lab)\n' ;;
       helm) printf 'AUTO    helm (runs from a pinned container image)\n' ;;
-      kubectl) printf 'OPTIONAL %s (needed for make lab-argocd, logs and status)\n' "$tool" ;;
+      kubectl) printf 'OPTIONAL %s (needed for lab-verify, lab-argocd, logs and status)\n' "$tool" ;;
       *) printf 'OPTIONAL %s (needed for make verify and the Jenkins pipeline)\n' "$tool" ;;
     esac
   fi
